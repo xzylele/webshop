@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
@@ -25,9 +26,25 @@ export default function TicketsPage() {
   const [newDescription, setNewDescription] = useState('');
   const [formError, setFormError] = useState('');
 
-  // Chat reply state
   const [replyMessage, setReplyMessage] = useState('');
   const [replyError, setReplyError] = useState('');
+
+  // Read query params for pre-filled report from inventory page
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const isReport = searchParams.get('report');
+    if (isReport === 'true' && status === 'authenticated') {
+      const product = searchParams.get('product') || '';
+      const desc = searchParams.get('desc') || '';
+      const amount = searchParams.get('amount') || '';
+      const txId = searchParams.get('txId') || '';
+      setNewCategory('product');
+      setNewTitle(`แจ้งปัญหาสินค้า: ${product}`);
+      setNewDescription(`รายการที่มีปัญหา:\nสินค้า: ${product}\nรายละเอียดการซื้อ: ${desc}\nยอดเงิน: ${amount} THB\nTransaction ID: ${txId}\n\nรายละเอียดปัญหา: `);
+      setCreateModalOpen(true);
+    }
+  }, [searchParams, status]);
 
   // 1. Query: List Tickets
   const { data: tickets = [], isLoading: ticketsLoading } = useQuery({

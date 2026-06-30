@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery } from '@tanstack/react-query';
-import { Clock, Wallet, ShoppingBag, Copy, Check, Search, Award, RefreshCw, LogIn, AlertCircle } from 'lucide-react';
+import { Clock, Wallet, ShoppingBag, Copy, Check, Search, Award, RefreshCw, LogIn, AlertCircle, MessageSquare } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import CanvasBackground from '../components/CanvasBackground';
@@ -324,22 +324,50 @@ export default function InventoryPage() {
 
                           {/* Copy button if it is a purchase */}
                           {isPurchase && (
-                            <button
-                              onClick={() => handleCopy(tx.description, tx._id)}
-                              className="flex items-center gap-1.5 text-xs font-bold text-sky-400 hover:text-sky-300 bg-sky-950/20 hover:bg-sky-950/40 border border-sky-500/10 hover:border-sky-500/30 px-3 py-2 rounded-xl transition-all cursor-pointer"
-                            >
-                              {copiedId === tx._id ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span className="text-emerald-400">คัดลอกแล้ว</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3.5 h-3.5" />
-                                  <span>คัดลอกคีย์</span>
-                                </>
-                              )}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleCopy(tx.description, tx._id)}
+                                className="flex items-center gap-1.5 text-xs font-bold text-sky-400 hover:text-sky-300 bg-sky-950/20 hover:bg-sky-950/40 border border-sky-500/10 hover:border-sky-500/30 px-3 py-2 rounded-xl transition-all cursor-pointer"
+                              >
+                                {copiedId === tx._id ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span className="text-emerald-400">คัดลอกแล้ว</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>คัดลอกคีย์</span>
+                                  </>
+                                )}
+                              </button>
+                              <Link
+                                href={(() => {
+                                  const lines = (tx.description || '').split('\n');
+                                  const firstLine = lines[0] || '';
+                                  let productName = '';
+
+                                  if (firstLine.startsWith('ซื้อสินค้า:')) {
+                                    // Single purchase: "ซื้อสินค้า: Netflix Premium x1..."
+                                    productName = firstLine.replace(/^ซื้อสินค้า:\s*/, '').replace(/\s*x\d+.*$/, '').trim();
+                                  } else if (firstLine.startsWith('ชำระเงินตะกร้าสินค้า')) {
+                                    // Cart purchase: lines like "- Netflix Premium x1"
+                                    const productLines = lines.filter(l => l.trim().startsWith('- '));
+                                    const names = productLines.map(l => l.trim().replace(/^-\s*/, '').replace(/\s*x\d+.*$/, '').trim());
+                                    productName = names.join(', ');
+                                  } else {
+                                    productName = firstLine;
+                                  }
+
+                                  return `/tickets?report=true&txId=${tx._id}&product=${encodeURIComponent(productName)}&desc=${encodeURIComponent(firstLine)}&amount=${tx.amount}`;
+                                })()}
+                                className="flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:text-amber-300 bg-amber-950/20 hover:bg-amber-950/40 border border-amber-500/10 hover:border-amber-500/30 px-3 py-2 rounded-xl transition-all cursor-pointer"
+                                title="แจ้งปัญหาเกี่ยวกับรายการนี้"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                <span>แจ้งปัญหา</span>
+                              </Link>
+                            </div>
                           )}
 
                         </div>

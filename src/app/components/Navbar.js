@@ -92,18 +92,14 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
         <div className="flex items-center gap-4">
           
           {/* Cart Icon Button */}
-          <button
-            onClick={() => setCartOpen(true)}
-            className="relative p-2 rounded-full border border-white/5 hover:border-sky-500/20 hover:bg-zinc-900/40 text-zinc-400 hover:text-sky-400 cursor-pointer transition-colors flex items-center justify-center active:scale-95"
-            title="ตะกร้าสินค้า"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-sky-500 text-sky-950 font-black rounded-full flex items-center justify-center text-[9px] animate-pulse">
-                {cartCount}
-              </span>
-            )}
-          </button>
+          <Link href="/cart" className="relative p-2 rounded-full border border-white/5 hover:border-sky-500/20 hover:bg-zinc-900/40 text-zinc-400 hover:text-sky-400 flex items-center justify-center active:scale-95" title="ตะกร้าสินค้า">
+          <ShoppingCart className="w-4 h-4" />
+          {cartCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-sky-500 text-sky-950 font-black rounded-full flex items-center justify-center text-[9px] animate-pulse">
+              {cartCount}
+            </span>
+          )}
+        </Link>
 
           {/* User Session Info */}
           {session ? (
