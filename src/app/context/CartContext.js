@@ -21,7 +21,12 @@ export function CartProvider({ children }) {
     const savedCart = localStorage.getItem('nakata_cart');
     if (savedCart) {
       try {
-        setCartItems(JSON.parse(savedCart));
+        const parsed = JSON.parse(savedCart);
+        if (Array.isArray(parsed)) {
+          // Auto-heal: filter out invalid items that don't have id/name (prevents display glitches with stale data)
+          const validItems = parsed.filter(item => item && (item.id || item._id) && item.name);
+          setCartItems(validItems);
+        }
       } catch (e) {
         console.error('Failed to parse cart items:', e);
       }
