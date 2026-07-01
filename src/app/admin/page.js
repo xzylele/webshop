@@ -97,6 +97,15 @@ export default function AdminPage() {
     }
   }, [session, status, router]);
 
+  // Open tab/ticket from notification link (?tab=tickets&ticket=...)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    const ticket = params.get('ticket');
+    if (tab) setActiveTab(tab);
+    if (ticket) setSelectedAdminTicketId(ticket);
+  }, []);
+
   // Query: Stats
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['stats'],

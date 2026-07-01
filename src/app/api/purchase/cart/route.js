@@ -3,6 +3,7 @@ import { getUserRank } from '@/lib/ranks';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../auth/[...nextauth]/route';
 import { NextResponse } from 'next/server';
+import { notifyPurchase, checkAndNotifyLowStock } from '@/lib/adminNotifications';
 
 function generateProductCode(subcategory) {
   if (['Netflix', 'Disneyplus', 'Spotify'].includes(subcategory)) {
@@ -270,6 +271,19 @@ export async function POST(request) {
 
         if (codeUpdateErr) throw codeUpdateErr;
       }
+    }
+
+    await notifyPurchase({
+      username: user.username || user.email,
+      amount: finalPrice,
+      isCart: true,
+    });
+
+    for (const detail of purchaseDetails) {
+      const updatedStock = detail.product.stock_type === 'manual'
+        ? Number(detail.product.stock) - detail.qty
+        : undefined;
+      await checkAndNotifyLowStock(detail.product, updatedStock);
     }
 
     return NextResponse.json({

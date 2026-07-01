@@ -2,6 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../../auth/[...nextauth]/route';
 import { NextResponse } from 'next/server';
+import { notifyTicketReply } from '@/lib/adminNotifications';
 
 export async function GET(request) {
   try {
@@ -122,6 +123,14 @@ export async function POST(request) {
       .eq('id', ticketId);
 
     if (updateErr) throw updateErr;
+
+    if (!isAdmin) {
+      await notifyTicketReply({
+        ticketId,
+        title: ticket.title,
+        username: session.user.name || session.user.email,
+      });
+    }
 
     const formattedMessage = {
       ...newMessage,

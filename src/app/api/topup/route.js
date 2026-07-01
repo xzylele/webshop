@@ -2,6 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]/route';
 import { NextResponse } from 'next/server';
+import { notifyTopup } from '@/lib/adminNotifications';
 
 export async function POST(request) {
   try {
@@ -51,6 +52,12 @@ export async function POST(request) {
       ]);
 
     if (txErr) throw txErr;
+
+    await notifyTopup({
+      username: user.username || user.email,
+      amount,
+      method: method || 'PromptPay',
+    });
 
     return NextResponse.json({
       message: 'เติมเงินสำเร็จแล้ว!',

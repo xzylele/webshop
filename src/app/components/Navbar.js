@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation';
 import { getUserRank } from '@/lib/ranks';
 import { useCart } from '../context/CartContext';
 import CartDrawer from './CartDrawer';
+import AdminNotificationBell from './AdminNotificationBell';
 
 export default function Navbar({ onOpenContact, onOpenHistory }) {
   const { data: session, update } = useSession();
@@ -100,6 +101,9 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
             </span>
           )}
         </Link>
+
+          {/* Admin Notification Bell */}
+          <AdminNotificationBell />
 
           {/* User Session Info */}
           {session ? (

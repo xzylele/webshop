@@ -200,3 +200,20 @@ ALTER TABLE public.support_messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow users to read messages of their own tickets" ON public.support_messages FOR SELECT USING (EXISTS (SELECT 1 FROM public.support_tickets WHERE id = ticket_id AND (user_id = auth.uid() OR (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin')));
 CREATE POLICY "Allow users to insert replies in their own tickets" ON public.support_messages FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM public.support_tickets WHERE id = ticket_id AND (user_id = auth.uid() OR (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin')));
 CREATE POLICY "Allow all for service_role on support_messages" ON public.support_messages FOR ALL USING (true);
+
+
+-- 12. Table: Admin Notifications (in-app alerts for admins)
+CREATE TABLE IF NOT EXISTS public.admin_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type TEXT NOT NULL, -- 'new_ticket' | 'ticket_reply' | 'topup' | 'purchase' | 'low_stock'
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    link TEXT DEFAULT NULL,
+    metadata JSONB DEFAULT '{}',
+    is_read BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.admin_notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all for service_role on admin_notifications" ON public.admin_notifications FOR ALL USING (true);

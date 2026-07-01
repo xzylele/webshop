@@ -2,6 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../../auth/[...nextauth]/route';
 import { NextResponse } from 'next/server';
+import { notifyNewTicket } from '@/lib/adminNotifications';
 
 export async function GET(request) {
   try {
@@ -84,6 +85,12 @@ export async function POST(request) {
       ]);
 
     if (msgErr) throw msgErr;
+
+    await notifyNewTicket({
+      ticketId: ticket.id,
+      title,
+      username: session.user.name || session.user.email,
+    });
 
     const formattedTicket = {
       ...ticket,
