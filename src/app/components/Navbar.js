@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useSession, signOut } from 'next-auth/react';
 import { useState } from 'react';
-import { Home, ShoppingBag, Wallet, MessageSquare, Menu, X, LogOut, Clock, Sliders, Award, ShoppingCart } from 'lucide-react';
+import { Home, ShoppingBag, Wallet, MessageSquare, Menu, X, LogOut, Sliders, Award, ShoppingCart, User } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { getUserRank } from '@/lib/ranks';
 import { useCart } from '../context/CartContext';
@@ -132,7 +132,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
                 title="คลังสินค้า & ประวัติการซื้อ"
                 className="p-2 rounded-full border border-white/5 hover:border-sky-500/20 hover:bg-zinc-900/40 text-zinc-400 hover:text-sky-400 cursor-pointer transition-colors flex items-center justify-center"
               >
-                <Clock className="w-4 h-4" />
+                <User className="w-4 h-4" />
               </Link>
 
               {/* Logout Button */}
@@ -245,7 +245,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center gap-3 w-full text-left px-3 py-2 rounded-md text-sm font-medium text-zinc-400 hover:bg-white/5 hover:text-white cursor-pointer"
                 >
-                  <Clock className="w-4 h-4" />
+                  <User className="w-4 h-4" />
                   ประวัติและคลังของฉัน
                 </Link>
 

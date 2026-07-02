@@ -102,14 +102,30 @@ export async function POST(request) {
 
     if (couponCode) {
       const normalizedCode = couponCode.trim().toUpperCase();
-      const { data: coupon, error: couponErr } = await supabaseAdmin
+      
+      // ค้นหาคูปอง: ค้นหาทั้งแบบคูปองส่วนตัวของลูกค้า (มี #USER_ID) และแบบสาธารณะ
+      const { data: coupons, error: couponErr } = await supabaseAdmin
         .from('coupons')
         .select('*')
-        .eq('code', normalizedCode)
-        .eq('is_active', true)
-        .maybeSingle();
+        .or(`code.eq.${normalizedCode},code.like.${normalizedCode}#%`)
+        .eq('is_active', true);
 
       if (couponErr) throw couponErr;
+
+      let coupon = null;
+      if (coupons && coupons.length > 0) {
+        // 1. หาแบบคูปองส่วนตัวที่ผูกกับ user
+        coupon = coupons.find(c => c.code === `${normalizedCode}#${user.id}`);
+        // 2. ถ้าไม่เจอ ค่อยหาแบบสาธารณะ
+        if (!coupon) {
+          coupon = coupons.find(c => {
+            const parts = c.code.split('#');
+            const suffix = parts[1];
+            return !suffix || /^[0-9]+$/.test(suffix);
+          });
+        }
+      }
+
       if (!coupon) {
         return NextResponse.json({ error: 'รหัสคูปองไม่ถูกต้อง หรือ ถูกปิดใช้งานไปแล้ว' }, { status: 400 });
       }
@@ -142,9 +158,27 @@ export async function POST(request) {
         }, { status: 400 });
       }
 
+      // 4. ตรวจสอบสิทธิ์การใช้ของทั้งระบบ (ถ้ามีขีดจำกัดสูงสุดระบุไว้)
+      const parts = coupon.code.split('#');
+      const suffix = parts[1];
+      const maxTotalUses = suffix && /^[0-9]+$/.test(suffix) ? parseInt(suffix, 10) : null;
+      if (maxTotalUses !== null) {
+        const relatedCouponIds = coupons.map(c => c.id);
+        const { count: totalUsesCount, error: countErr } = await supabaseAdmin
+          .from('transactions')
+          .select('*', { count: 'exact', head: true })
+          .in('coupon_id', relatedCouponIds);
+
+        if (countErr) throw countErr;
+
+        if (totalUsesCount >= maxTotalUses) {
+          return NextResponse.json({ error: 'ขออภัย คูปองนี้ถูกสิทธิ์ผู้ใช้งานครบเต็มจำนวนทั้งหมดแล้ว' }, { status: 400 });
+        }
+      }
+
       couponUsed = coupon;
 
-      // 4. คำนวณยอดส่วนลด
+      // 5. คำนวณยอดส่วนลด
       if (coupon.type === 'percentage') {
         couponDiscountAmount = Math.round(finalPrice * (Number(coupon.discount) / 100));
         if (coupon.max_discount) {
@@ -263,9 +297,7 @@ export async function POST(request) {
         const { error: codeUpdateErr } = await supabaseAdmin
           .from('product_codes')
           .update({
-            is_used: true,
-            used_by: user.id,
-            transaction_id: transaction.id
+            is_used: true
           })
           .in('id', codeBatch.codeIds);
 

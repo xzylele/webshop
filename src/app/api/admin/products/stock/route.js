@@ -24,34 +24,84 @@ export async function GET(request) {
       return NextResponse.json({ error: 'กรุณาระบุไอดีสินค้า' }, { status: 400 });
     }
 
-    // ดึงรหัสคีย์โค้ดทั้งหมดของสินค้านั้นๆ เรียงตามลำดับล่าสุด และจอยข้อมูลผู้ใช้
+    // 1. ดึงข้อมูลสินค้าเพื่อนำชื่อสินค้ามาเปรียบเทียบในข้อมูลคำสั่งซื้อ
+    const { data: product, error: prodErr } = await supabaseAdmin
+      .from('products')
+      .select('*')
+      .eq('id', productId)
+      .maybeSingle();
+
+    if (prodErr) throw prodErr;
+    if (!product) {
+      return NextResponse.json({ error: 'ไม่พบสินค้าในระบบ' }, { status: 404 });
+    }
+
+    // 2. ดึงรหัสคีย์โค้ดทั้งหมดที่มีอยู่ในสต็อก
     const { data: codes, error: codesErr } = await supabaseAdmin
       .from('product_codes')
-      .select(`
-        id,
-        product_id,
-        code,
-        is_used,
-        used_by,
-        transaction_id,
-        created_at,
-        users:used_by (username, email)
-      `)
+      .select('id, product_id, code, is_used, created_at')
       .eq('product_id', productId)
       .order('created_at', { ascending: false });
 
     if (codesErr) throw codesErr;
 
-    const formattedCodes = codes.map(c => ({
-      _id: c.id,
-      id: c.id,
-      product: c.product_id,
-      code: c.code,
-      isUsed: c.is_used,
-      usedBy: c.users ? { username: c.users.username, email: c.users.email } : null,
-      transaction: c.transaction_id,
-      createdAt: c.created_at
-    }));
+    // 3. ดึงรายการประวัติการสั่งซื้อสินค้าที่ทำสำเร็จ
+    const { data: txs, error: txsErr } = await supabaseAdmin
+      .from('transactions')
+      .select('id, user_id, type, amount, description, status, created_at')
+      .eq('type', 'purchase')
+      .eq('status', 'completed');
+
+    if (txsErr) throw txsErr;
+
+    // 4. ดึงข้อมูลชื่อและอีเมลของผู้สั่งซื้อแยกต่างหากเพื่อความทนทานต่อ Schema
+    const userIds = txs ? [...new Set(txs.map(t => t.user_id).filter(Boolean))] : [];
+    const usersMap = {};
+    if (userIds.length > 0) {
+      const { data: usersList, error: usersErr } = await supabaseAdmin
+        .from('users')
+        .select('id, username, email')
+        .in('id', userIds);
+      if (!usersErr && usersList) {
+        usersList.forEach(u => {
+          usersMap[u.id] = { username: u.username, email: u.email };
+        });
+      }
+    }
+
+    // 5. จับคู่คีย์โค้ดแต่ละชุดกับประวัติผู้สั่งซื้อจริงจากข้อมูลธุรกรรม
+    const soldCodesMap = {};
+    if (txs) {
+      txs.forEach(t => {
+        if (!t.description) return;
+        if (t.description.includes(product.name)) {
+          const lines = t.description.split('\n');
+          const codeLines = lines.slice(1).map(l => l.trim()).filter(l => l.length > 0);
+          codeLines.forEach(codeStr => {
+            const userDetails = t.user_id ? usersMap[t.user_id] : null;
+            soldCodesMap[codeStr] = {
+              user: userDetails || null,
+              transactionId: t.id
+            };
+          });
+        }
+      });
+    }
+
+    // 6. ปรับรูปแบบข้อมูลส่งกลับไปยังฝั่ง Admin Panel UI
+    const formattedCodes = codes.map(c => {
+      const soldInfo = soldCodesMap[c.code];
+      return {
+        _id: c.id,
+        id: c.id,
+        product: c.product_id,
+        code: c.code,
+        isUsed: c.is_used || !!soldInfo,
+        usedBy: soldInfo ? soldInfo.user : null,
+        transaction: soldInfo ? soldInfo.transactionId : null,
+        createdAt: c.created_at
+      };
+    });
 
     return NextResponse.json(formattedCodes);
   } catch (error) {

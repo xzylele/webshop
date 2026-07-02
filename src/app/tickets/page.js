@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -29,6 +29,11 @@ export default function TicketsPage() {
   const [replyMessage, setReplyMessage] = useState('');
   const [replyError, setReplyError] = useState('');
 
+  const messagesEndRef = useRef(null);
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   // Read query params for pre-filled report from inventory page
   const searchParams = useSearchParams();
 
@@ -55,6 +60,7 @@ export default function TicketsPage() {
       return res.json();
     },
     enabled: status === 'authenticated',
+    refetchInterval: 4000, // อัปเดตรายชื่อตั๋วอัตโนมัติทุก 4 วินาที
   });
 
   // 2. Query: Ticket Messages
@@ -66,7 +72,12 @@ export default function TicketsPage() {
       return res.json();
     },
     enabled: !!selectedTicketId,
+    refetchInterval: 2000, // โหลดข้อความสนทนาล่าสุดทุก 2 วินาที (เรียลไทม์)
   });
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const selectedTicket = tickets.find(t => t._id === selectedTicketId);
 
@@ -361,6 +372,7 @@ export default function TicketsPage() {
                         );
                       })
                     )}
+                    <div ref={messagesEndRef} />
                   </div>
 
                   {/* Chat input box */}

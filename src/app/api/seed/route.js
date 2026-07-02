@@ -168,6 +168,26 @@ export async function GET() {
   try {
     const allZeroUUID = '00000000-0000-0000-0000-000000000000';
 
+    // 0. ดึงธุรกรรมการซื้อที่สำเร็จเพื่อคำนวณยอดขายสะสมจริง
+    const { data: txs, error: txsErr } = await supabaseAdmin
+      .from('transactions')
+      .select('description')
+      .eq('type', 'purchase')
+      .eq('status', 'completed');
+
+    const soldMap = {};
+    if (!txsErr && txs) {
+      txs.forEach(t => {
+        if (!t.description) return;
+        const match = t.description.match(/ซื้อสินค้า:\s*(.+?)\s*x(\d+)/);
+        if (match) {
+          const prodName = match[1].trim();
+          const qty = parseInt(match[2], 10) || 0;
+          soldMap[prodName] = (soldMap[prodName] || 0) + qty;
+        }
+      });
+    }
+
     // 1. ลบข้อมูลเก่าทั้งหมดตามความสัมพันธ์ของ Foreign Key
     await supabaseAdmin.from('gacha_won_codes').delete().neq('id', allZeroUUID);
     await supabaseAdmin.from('gacha_logs').delete().neq('id', allZeroUUID);
@@ -178,6 +198,9 @@ export async function GET() {
     // 2. ใส่ข้อมูลสินค้าตัวอย่าง
     const seededProducts = [];
     for (const p of initialProducts) {
+      const realSold = soldMap[p.name] || 0;
+      const finalStock = p.stockType === 'manual' ? Math.max(0, (p.stock || 0) - realSold) : 0;
+
       const { data: created, error } = await supabaseAdmin
         .from('products')
         .insert([
@@ -188,9 +211,9 @@ export async function GET() {
             image: p.image,
             category: p.category,
             subcategory: p.subcategory,
-            stock: p.stock || 0,
+            stock: finalStock,
             stock_type: p.stockType,
-            sold: p.sold || 0
+            sold: realSold
           }
         ])
         .select('*')

@@ -18,15 +18,14 @@ CREATE TABLE IF NOT EXISTS public.banners (
 ALTER TABLE public.banners ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for Banners
+DROP POLICY IF EXISTS "Allow public read banners" ON public.banners;
 CREATE POLICY "Allow public read banners" 
 ON public.banners 
 FOR SELECT 
 USING (true);
 
-CREATE POLICY "Allow all for service_role on banners" 
-ON public.banners 
-FOR ALL 
-USING (true);
+DROP POLICY IF EXISTS "Allow all for service_role on banners" ON public.banners;
+-- No write policy is needed: service_role bypasses RLS.
 
 
 -- 2. Table: Users
@@ -43,8 +42,9 @@ CREATE TABLE IF NOT EXISTS public.users (
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read users" ON public.users FOR SELECT USING (true);
-CREATE POLICY "Allow all for service_role on users" ON public.users FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow public read users" ON public.users;
+DROP POLICY IF EXISTS "Allow all for service_role on users" ON public.users;
+-- User records contain password hashes and must only be accessed by server APIs.
 
 
 -- 3. Table: Products
@@ -64,8 +64,9 @@ CREATE TABLE IF NOT EXISTS public.products (
 
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow public read products" ON public.products;
 CREATE POLICY "Allow public read products" ON public.products FOR SELECT USING (true);
-CREATE POLICY "Allow all for service_role on products" ON public.products FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow all for service_role on products" ON public.products;
 
 
 -- 4. Table: Product Codes (For digital keys stock)
@@ -79,29 +80,13 @@ CREATE TABLE IF NOT EXISTS public.product_codes (
 
 ALTER TABLE public.product_codes ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read product_codes" ON public.product_codes FOR SELECT USING (true);
-CREATE POLICY "Allow all for service_role on product_codes" ON public.product_codes FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow public read product_codes" ON public.product_codes;
+DROP POLICY IF EXISTS "Allow all for service_role on product_codes" ON public.product_codes;
+-- Product codes are secrets and must only be accessed by server APIs.
 
 
--- 5. Table: Transactions
-CREATE TABLE IF NOT EXISTS public.transactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL, -- 'purchase' | 'topup' | 'adjust'
-    amount NUMERIC NOT NULL,
-    description TEXT,
-    status TEXT DEFAULT 'completed',
-    coupon_id UUID REFERENCES public.coupons(id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
-ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow public read transactions" ON public.transactions FOR SELECT USING (true);
-CREATE POLICY "Allow all for service_role on transactions" ON public.transactions FOR ALL USING (true);
-
-
--- 6. Table: Coupons
+-- 5. Table: Coupons
+-- Must be created before transactions because transactions.coupon_id references it.
 CREATE TABLE IF NOT EXISTS public.coupons (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code TEXT UNIQUE NOT NULL,
@@ -117,8 +102,26 @@ CREATE TABLE IF NOT EXISTS public.coupons (
 
 ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read coupons" ON public.coupons FOR SELECT USING (true);
-CREATE POLICY "Allow all for service_role on coupons" ON public.coupons FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow public read coupons" ON public.coupons;
+DROP POLICY IF EXISTS "Allow all for service_role on coupons" ON public.coupons;
+
+
+-- 6. Table: Transactions
+CREATE TABLE IF NOT EXISTS public.transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL, -- 'purchase' | 'topup' | 'adjust'
+    amount NUMERIC NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'completed',
+    coupon_id UUID REFERENCES public.coupons(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read transactions" ON public.transactions;
+DROP POLICY IF EXISTS "Allow all for service_role on transactions" ON public.transactions;
 
 
 -- 7. Table: Gacha Items
@@ -134,8 +137,9 @@ CREATE TABLE IF NOT EXISTS public.gacha_items (
 
 ALTER TABLE public.gacha_items ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read gacha_items" ON public.gacha_items FOR SELECT USING (true);
-CREATE POLICY "Allow all for service_role on gacha_items" ON public.gacha_items FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow public read gacha_items" ON public.gacha_items;
+DROP POLICY IF EXISTS "Allow all for service_role on gacha_items" ON public.gacha_items;
+-- stock can contain redeemable codes, so gacha items are exposed through server APIs only.
 
 
 -- 8. Table: Gacha Won Codes
@@ -149,8 +153,8 @@ CREATE TABLE IF NOT EXISTS public.gacha_won_codes (
 
 ALTER TABLE public.gacha_won_codes ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read gacha_won_codes" ON public.gacha_won_codes FOR SELECT USING (true);
-CREATE POLICY "Allow all for service_role on gacha_won_codes" ON public.gacha_won_codes FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow public read gacha_won_codes" ON public.gacha_won_codes;
+DROP POLICY IF EXISTS "Allow all for service_role on gacha_won_codes" ON public.gacha_won_codes;
 
 
 -- 9. Table: Gacha Logs
@@ -163,8 +167,8 @@ CREATE TABLE IF NOT EXISTS public.gacha_logs (
 
 ALTER TABLE public.gacha_logs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public read gacha_logs" ON public.gacha_logs FOR SELECT USING (true);
-CREATE POLICY "Allow all for service_role on gacha_logs" ON public.gacha_logs FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow public read gacha_logs" ON public.gacha_logs;
+DROP POLICY IF EXISTS "Allow all for service_role on gacha_logs" ON public.gacha_logs;
 
 
 -- 10. Table: Support Tickets
@@ -180,9 +184,10 @@ CREATE TABLE IF NOT EXISTS public.support_tickets (
 
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow users to read their own tickets" ON public.support_tickets FOR SELECT USING (auth.uid() = user_id OR (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin');
-CREATE POLICY "Allow users to insert their own tickets" ON public.support_tickets FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Allow all for service_role on support_tickets" ON public.support_tickets FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow users to read their own tickets" ON public.support_tickets;
+DROP POLICY IF EXISTS "Allow users to insert their own tickets" ON public.support_tickets;
+DROP POLICY IF EXISTS "Allow all for service_role on support_tickets" ON public.support_tickets;
+-- This app uses NextAuth, not Supabase Auth. Ownership is checked in server APIs.
 
 
 -- 11. Table: Support Messages (Chat replies)
@@ -197,9 +202,9 @@ CREATE TABLE IF NOT EXISTS public.support_messages (
 
 ALTER TABLE public.support_messages ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow users to read messages of their own tickets" ON public.support_messages FOR SELECT USING (EXISTS (SELECT 1 FROM public.support_tickets WHERE id = ticket_id AND (user_id = auth.uid() OR (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin')));
-CREATE POLICY "Allow users to insert replies in their own tickets" ON public.support_messages FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM public.support_tickets WHERE id = ticket_id AND (user_id = auth.uid() OR (SELECT role FROM public.users WHERE id = auth.uid()) = 'admin')));
-CREATE POLICY "Allow all for service_role on support_messages" ON public.support_messages FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow users to read messages of their own tickets" ON public.support_messages;
+DROP POLICY IF EXISTS "Allow users to insert replies in their own tickets" ON public.support_messages;
+DROP POLICY IF EXISTS "Allow all for service_role on support_messages" ON public.support_messages;
 
 
 -- 12. Table: Admin Notifications (in-app alerts for admins)
@@ -216,4 +221,4 @@ CREATE TABLE IF NOT EXISTS public.admin_notifications (
 
 ALTER TABLE public.admin_notifications ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow all for service_role on admin_notifications" ON public.admin_notifications FOR ALL USING (true);
+DROP POLICY IF EXISTS "Allow all for service_role on admin_notifications" ON public.admin_notifications;

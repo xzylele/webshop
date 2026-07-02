@@ -1,7 +1,7 @@
 "use client";
 import { useCart } from '@/app/context/CartContext';
 import { useSession } from 'next-auth/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { X, ShoppingBag, Plus, Minus, Trash2, Tag, Loader2, CheckCircle, Copy, Check, Download } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -36,6 +36,19 @@ export default function CartContent({ isPage = false, onClose }) {
   const [checkoutSuccess, setCheckoutSuccess] = useState(null);
   const [checkoutError, setCheckoutError] = useState('');
   const [copiedIdx, setCopiedIdx] = useState(null);
+
+  // ดึงข้อมูลคูปองส่วนตัวสะสมที่พร้อมใช้งาน
+  const { data: myCoupons = [] } = useQuery({
+    queryKey: ['my-coupons-cart', session?.user?.id],
+    queryFn: async () => {
+      const res = await fetch('/api/coupons/my-coupons');
+      if (!res.ok) throw new Error('Failed to load my coupons');
+      return res.json();
+    },
+    enabled: !!session,
+  });
+
+  const activeCoupons = myCoupons.filter(cp => cp.status === 'active');
 
   const checkoutMutation = useMutation({
     mutationFn: async payload => {
@@ -232,6 +245,26 @@ export default function CartContent({ isPage = false, onClose }) {
                   </div>
                 )}
                 {couponError && <p className="text-xs text-red-400 mt-1">{couponError}</p>}
+                {!appliedCoupon && activeCoupons.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[9px] text-zinc-500 font-semibold block">คูปองสะสมของคุณ (คลิกเพื่อใช้งาน):</span>
+                    <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-1">
+                      {activeCoupons.map((cp) => (
+                        <button
+                          key={cp.id}
+                          type="button"
+                          onClick={() => {
+                            setCouponCodeInput(cp.code);
+                            applyCartCoupon(cp.code);
+                          }}
+                          className="text-[9px] font-black text-sky-400 hover:text-sky-300 bg-sky-950/20 border border-sky-500/10 px-2 py-1 rounded-xl transition-all cursor-pointer hover:border-sky-500/30"
+                        >
+                          {cp.code} ({cp.type === 'percentage' ? `${cp.discount}%` : `${cp.discount}฿`})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {/* Summary */}

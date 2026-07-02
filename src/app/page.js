@@ -14,6 +14,44 @@ import CanvasBackground from './components/CanvasBackground';
 
 export default function HomePage() {
   const { data: session } = useSession();
+  const [claimingCode, setClaimingCode] = useState(null);
+
+  // ดึงข้อมูลคูปองสาธารณะที่สามารถเก็บได้
+  const { data: publicCoupons = [], refetch: refetchPublicCoupons } = useQuery({
+    queryKey: ['public-coupons'],
+    queryFn: async () => {
+      const res = await fetch('/api/coupons/public');
+      if (!res.ok) throw new Error('Failed to load public coupons');
+      return res.json();
+    },
+  });
+
+  const handleClaimCoupon = async (code) => {
+    if (!session) {
+      alert('กรุณาเข้าสู่ระบบก่อนทำการเก็บคูปองส่วนลด');
+      return;
+    }
+    setClaimingCode(code);
+    try {
+      const res = await fetch('/api/coupons/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'เกิดข้อผิดพลาดในการเก็บคูปอง');
+      } else {
+        alert(data.message || 'เก็บคูปองส่วนลดสำเร็จแล้ว!');
+        refetchPublicCoupons();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('เกิดข้อผิดพลาดในการเก็บคูปอง');
+    } finally {
+      setClaimingCode(null);
+    }
+  };
 
   // Modals status
   const [contactOpen, setContactOpen] = useState(false);
@@ -323,6 +361,67 @@ export default function HomePage() {
           </div>
 
         </section>
+
+        {/* คูปองส่วนลดแนะนำ Section */}
+        {publicCoupons.length > 0 && (
+          <section className="space-y-6">
+            <div>
+              <h2 className="text-lg font-bold text-white">คูปองส่วนลดแนะนำ</h2>
+              <p className="text-xs text-zinc-500">เก็บสะสมโค้ดส่วนลดเพื่อประหยัดได้มากกว่า</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 font-sans">
+              {publicCoupons.map((cp) => {
+                return (
+                  <div
+                    key={cp.id}
+                    className="relative overflow-hidden bg-zinc-950/40 border border-sky-500/20 rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between gap-4 transition-all hover:border-sky-500/40"
+                  >
+                    {/* Ticket cutout decoration */}
+                    <div className="absolute top-1/2 -left-2 w-4 h-4 bg-[#02060d] border-r border-white/5 rounded-full -translate-y-1/2 z-10" />
+                    <div className="absolute top-1/2 -right-2 w-4 h-4 bg-[#02060d] border-l border-white/5 rounded-full -translate-y-1/2 z-10" />
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">ส่วนลดแจกฟรี</span>
+                      <div className="flex justify-between items-baseline pt-1">
+                        <span className="text-2xl font-black text-white font-mono">
+                          {cp.discount.toLocaleString()}
+                          <span className="text-xs font-bold text-zinc-400 font-sans ml-0.5">
+                            {cp.type === 'percentage' ? '%' : 'บาท'}
+                          </span>
+                        </span>
+                        <span className="text-xs font-bold text-sky-400 font-mono tracking-wider">
+                          {cp.code}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400">
+                        ขั้นต่ำ {cp.minPurchase} บาท {cp.maxDiscount ? `(ลดสูงสุด ${cp.maxDiscount} บาท)` : ''}
+                      </p>
+                    </div>
+
+                    <div className="border-t border-white/5 pt-3 flex items-center justify-between gap-4">
+                      <span className="text-[9px] text-zinc-500">
+                        {cp.expiresAt ? `หมดอายุ: ${new Date(cp.expiresAt).toLocaleDateString('th-TH')}` : 'ไม่มีหมดอายุ'}
+                      </span>
+                      
+                      <button
+                        disabled={cp.isClaimed || claimingCode === cp.code}
+                        onClick={() => handleClaimCoupon(cp.code)}
+                        className={`text-[10px] font-bold px-3 py-2 rounded-xl transition-all cursor-pointer ${
+                          cp.isClaimed
+                            ? 'bg-zinc-800 text-zinc-400 cursor-not-allowed border border-zinc-700'
+                            : 'bg-sky-500 text-sky-950 hover:bg-sky-400 glow-btn border border-sky-500/20'
+                        }`}
+                      >
+                        {cp.isClaimed ? 'เก็บแล้ว' : claimingCode === cp.code ? 'กำลังเก็บ...' : 'เก็บคูปอง'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Recommended Products Grid */}
         <section className="space-y-6">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { X, ShoppingCart, Loader2, AlertCircle, CheckCircle, Copy, Check, Tag } from 'lucide-react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { getUserRank } from '@/lib/ranks';
 import Link from 'next/link';
@@ -22,6 +22,19 @@ export default function ProductDetailModal({ product, isOpen, onClose }) {
   const [validatingCoupon, setValidatingCoupon] = useState(false);
 
   const queryClient = useQueryClient();
+
+  // ดึงคูปองส่วนตัวสะสมที่พร้อมใช้งานของผู้ใช้
+  const { data: myCoupons = [] } = useQuery({
+    queryKey: ['my-coupons-modal', session?.user?.id],
+    queryFn: async () => {
+      const res = await fetch('/api/coupons/my-coupons');
+      if (!res.ok) throw new Error('Failed to load my coupons');
+      return res.json();
+    },
+    enabled: !!session && isOpen,
+  });
+
+  const activeCoupons = myCoupons.filter(cp => cp.status === 'active');
 
   // Buy Product mutation
   const mutation = useMutation({
@@ -63,6 +76,45 @@ export default function ProductDetailModal({ product, isOpen, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           code: couponCode,
+          totalPrice: currentPrice
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'รหัสคูปองไม่ถูกต้อง');
+      }
+
+      setAppliedCoupon({
+        code: data.code,
+        discount: data.discount,
+      });
+    } catch (err) {
+      setCouponError(err.message);
+      setAppliedCoupon(null);
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const handleApplyCouponDirectly = async (codeToApply) => {
+    if (!codeToApply) return;
+    setCouponCode(codeToApply);
+    setCouponError('');
+    setValidatingCoupon(true);
+
+    const basePrice = product.price * quantity;
+    const userRank = session?.user ? getUserRank(session.user.totalSpent || 0) : null;
+    const vipDiscountPercent = userRank ? userRank.discountPercent : 0;
+    const vipDiscountAmount = Math.round(basePrice * (vipDiscountPercent / 100));
+    const currentPrice = basePrice - vipDiscountAmount;
+
+    try {
+      const res = await fetch('/api/coupons/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          code: codeToApply,
           totalPrice: currentPrice
         }),
       });
@@ -334,6 +386,23 @@ export default function ProductDetailModal({ product, isOpen, onClose }) {
                 )}
                 {couponError && (
                   <p className="text-[10px] text-red-400 font-semibold">{couponError}</p>
+                )}
+                {!appliedCoupon && activeCoupons.length > 0 && (
+                  <div className="space-y-1 pt-1.5 font-sans">
+                    <span className="text-[9px] text-zinc-500 font-semibold block">คูปองสะสมของคุณ (คลิกเพื่อใช้งาน):</span>
+                    <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-1">
+                      {activeCoupons.map((cp) => (
+                        <button
+                          key={cp.id}
+                          type="button"
+                          onClick={() => handleApplyCouponDirectly(cp.code)}
+                          className="text-[9px] font-black text-sky-400 hover:text-sky-300 bg-sky-950/20 border border-sky-500/10 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer hover:border-sky-500/30"
+                        >
+                          {cp.code} ({cp.type === 'percentage' ? `${cp.discount}%` : `${cp.discount}฿`})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             )}

@@ -128,8 +128,9 @@ export async function POST() {
         .from('coupons')
         .insert([
           {
-            code: generatedCode,
+            code: `${generatedCode}#${user.id}`,
             discount: Number(selectedItem.coupon_discount) || 10,
+            max_uses_per_user: 1,
             is_active: true
           }
         ]);

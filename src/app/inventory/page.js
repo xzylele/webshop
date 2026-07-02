@@ -27,6 +27,17 @@ export default function InventoryPage() {
     enabled: !!session,
   });
 
+  // ดึงข้อมูลคูปองสะสมของตนเอง
+  const { data: coupons = [], isLoading: couponsLoading, error: couponsError, refetch: refetchCoupons } = useQuery({
+    queryKey: ['my-coupons'],
+    queryFn: async () => {
+      const res = await fetch('/api/coupons/my-coupons');
+      if (!res.ok) throw new Error('เกิดข้อผิดพลาดในการโหลดคูปองสะสม');
+      return res.json();
+    },
+    enabled: !!session,
+  });
+
   const handleCopy = (text, id) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -35,6 +46,7 @@ export default function InventoryPage() {
 
   const handleRefresh = () => {
     refetch();
+    refetchCoupons();
   };
 
   // VIP Rank logic
@@ -220,7 +232,8 @@ export default function InventoryPage() {
                   {[
                     { id: 'all', label: 'ทั้งหมด' },
                     { id: 'purchase', label: 'คีย์สินค้าที่ซื้อ' },
-                    { id: 'topup', label: 'รายการเติมเงิน' }
+                    { id: 'topup', label: 'รายการเติมเงิน' },
+                    { id: 'coupons', label: 'คูปองของฉัน' }
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -250,9 +263,107 @@ export default function InventoryPage() {
 
               </div>
 
-              {/* Transactions List */}
+              {/* Transactions or Coupons List */}
               <div className="space-y-4">
-                {isLoading ? (
+                {activeTab === 'coupons' ? (
+                  couponsLoading ? (
+                    <div className="flex flex-col items-center justify-center py-24 gap-3 bg-zinc-950/20 border border-white/5 rounded-3xl backdrop-blur-md">
+                      <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-xs text-zinc-500">กำลังโหลดคูปองของคุณ...</p>
+                    </div>
+                  ) : couponsError ? (
+                    <div className="text-center py-20 text-xs text-red-400 bg-zinc-950/20 border border-white/5 rounded-3xl">
+                      {couponsError.message || 'เกิดข้อผิดพลาดในการโหลดคูปอง'}
+                    </div>
+                  ) : coupons.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-28 text-zinc-500 gap-3 bg-zinc-950/25 border border-white/5 rounded-3xl">
+                      <Award className="w-12 h-12 stroke-[1.2] text-zinc-600" />
+                      <p className="text-sm font-medium">คุณยังไม่มีคูปองส่วนลดสะสม</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {coupons.map((cp) => {
+                        const isUsed = cp.status === 'used';
+                        const isExpired = cp.status === 'expired';
+                        const isInactive = cp.status === 'inactive';
+                        
+                        return (
+                          <div
+                            key={cp.id}
+                            className={`relative overflow-hidden bg-zinc-950/40 border rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between gap-4 transition-all hover:border-white/10 ${
+                              isUsed ? 'opacity-50 border-white/5' : isExpired || isInactive ? 'border-red-500/10' : 'border-sky-500/20'
+                            }`}
+                          >
+                            {/* Ticket cutout decoration */}
+                            <div className="absolute top-1/2 -left-2 w-4 h-4 bg-[#02060d] border-r border-white/5 rounded-full -translate-y-1/2 z-10" />
+                            <div className="absolute top-1/2 -right-2 w-4 h-4 bg-[#02060d] border-l border-white/5 rounded-full -translate-y-1/2 z-10" />
+
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">รหัสคูปองส่วนลด</span>
+                                  <h4 className="text-lg font-black text-sky-400 tracking-wider font-mono">
+                                    {cp.code}
+                                  </h4>
+                                </div>
+                                <span
+                                  className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                                    isUsed
+                                      ? 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                      : isExpired || isInactive
+                                      ? 'bg-red-500/10 text-red-400 border-red-500/10'
+                                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 animate-pulse'
+                                  }`}
+                                >
+                                  {isUsed ? 'ใช้แล้ว' : isExpired ? 'หมดอายุ' : isInactive ? 'ปิดใช้งาน' : 'พร้อมใช้งาน'}
+                                </span>
+                              </div>
+
+                              <div className="space-y-1 pt-1">
+                                <div className="flex items-baseline gap-1 text-2xl font-black text-white font-mono">
+                                  {cp.discount.toLocaleString()}
+                                  <span className="text-xs font-bold text-zinc-400 font-sans">
+                                    {cp.type === 'percentage' ? '%' : 'บาท'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-zinc-400 leading-normal">
+                                  {cp.type === 'percentage'
+                                    ? `ลด ${cp.discount}% ${cp.maxDiscount ? `(สูงสุด ${cp.maxDiscount} บาท)` : ''}`
+                                    : `ลดทันที ${cp.discount} บาท`
+                                  } · ขั้นต่ำ {cp.minPurchase} บาท
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="border-t border-white/5 pt-3 flex justify-between items-center text-[10px] text-zinc-500">
+                              <span>
+                                {cp.expiresAt ? `หมดอายุ: ${new Date(cp.expiresAt).toLocaleDateString('th-TH')}` : 'ไม่มีวันหมดอายุ'}
+                              </span>
+                              {!isUsed && !isExpired && !isInactive && (
+                                <button
+                                  onClick={() => handleCopy(cp.code, cp.id)}
+                                  className="flex items-center gap-1.5 text-[10px] font-bold text-sky-400 hover:text-sky-300 bg-sky-950/20 hover:bg-sky-950/40 border border-sky-500/10 hover:border-sky-500/30 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer"
+                                >
+                                  {copiedId === cp.id ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      <span className="text-emerald-400">คัดลอกแล้ว</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3" />
+                                      <span>คัดลอกรหัส</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : isLoading ? (
                   <div className="flex flex-col items-center justify-center py-24 gap-3 bg-zinc-950/20 border border-white/5 rounded-3xl backdrop-blur-md">
                     <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
                     <p className="text-xs text-zinc-500">กำลังโหลดรายการ...</p>
