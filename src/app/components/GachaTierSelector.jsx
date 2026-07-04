@@ -4,41 +4,41 @@ import { Ticket, Sparkles, Crown } from 'lucide-react';
 
 const tierThemes = {
   normal: {
-    activeClass: 'border-sky-400/80 bg-sky-950/20 shadow-[0_0_24px_rgba(56,189,248,0.2)]',
-    inactiveClass: 'border-white/5 bg-white/[0.02] hover:border-sky-500/30 hover:bg-sky-500/[0.02]',
+    activeClass: 'border-sky-400 bg-sky-950/30 shadow-[0_0_25px_rgba(56,189,248,0.25)] scale-[1.02] -translate-y-0.5',
+    inactiveClass: 'border-white/5 bg-zinc-950/40 hover:border-sky-500/30 hover:bg-sky-500/[0.03] hover:-translate-y-0.5 hover:scale-[1.01]',
     priceClass: 'text-sky-400',
     icon: Ticket,
-    glowBg: 'rgba(56, 189, 248, 0.05)',
+    glowBg: 'rgba(56, 189, 248, 0.06)',
   },
   premium: {
-    activeClass: 'border-amber-400/80 bg-amber-950/20 shadow-[0_0_24px_rgba(245,158,11,0.25)]',
-    inactiveClass: 'border-white/5 bg-white/[0.02] hover:border-amber-500/30 hover:bg-amber-500/[0.02]',
+    activeClass: 'border-amber-400 bg-amber-950/30 shadow-[0_0_25px_rgba(245,158,11,0.3)] scale-[1.02] -translate-y-0.5',
+    inactiveClass: 'border-white/5 bg-zinc-950/40 hover:border-amber-500/30 hover:bg-amber-500/[0.03] hover:-translate-y-0.5 hover:scale-[1.01]',
     priceClass: 'text-amber-400',
     icon: Sparkles,
-    glowBg: 'rgba(245, 158, 11, 0.06)',
+    glowBg: 'rgba(245, 158, 11, 0.08)',
   },
   luxury: {
-    activeClass: 'border-rose-400/80 bg-rose-950/20 shadow-[0_0_24px_rgba(244,63,94,0.3)]',
-    inactiveClass: 'border-white/5 bg-white/[0.02] hover:border-rose-500/30 hover:bg-rose-500/[0.02]',
+    activeClass: 'border-rose-400 bg-rose-950/30 shadow-[0_0_25px_rgba(244,63,94,0.35)] scale-[1.02] -translate-y-0.5',
+    inactiveClass: 'border-white/5 bg-zinc-950/40 hover:border-rose-500/30 hover:bg-rose-500/[0.03] hover:-translate-y-0.5 hover:scale-[1.01]',
     priceClass: 'text-rose-400',
     icon: Crown,
-    glowBg: 'rgba(244, 63, 94, 0.07)',
+    glowBg: 'rgba(244, 63, 94, 0.1)',
   },
 };
 
 const getTheme = (slug) => {
   return tierThemes[slug] || {
-    activeClass: 'border-purple-400/80 bg-purple-950/20 shadow-[0_0_24px_rgba(167,139,250,0.2)]',
-    inactiveClass: 'border-white/5 bg-white/[0.02] hover:border-purple-500/30 hover:bg-purple-500/[0.02]',
+    activeClass: 'border-purple-400 bg-purple-950/30 shadow-[0_0_25px_rgba(167,139,250,0.25)] scale-[1.02] -translate-y-0.5',
+    inactiveClass: 'border-white/5 bg-zinc-950/40 hover:border-purple-500/30 hover:bg-purple-500/[0.03] hover:-translate-y-0.5 hover:scale-[1.01]',
     priceClass: 'text-purple-400',
     icon: Ticket,
-    glowBg: 'rgba(167, 139, 250, 0.05)',
+    glowBg: 'rgba(167, 139, 250, 0.06)',
   };
 };
 
 export default function GachaTierSelector({ tiers, selectedTierId, onSelect }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-label="เลือกระดับกาชา">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" aria-label="เลือกระดับกาชา">
       {tiers.map(tier => {
         const selected = tier.id === selectedTierId;
         const theme = getTheme(tier.slug);
@@ -50,7 +50,7 @@ export default function GachaTierSelector({ tiers, selectedTierId, onSelect }) {
             type="button"
             aria-pressed={selected}
             onClick={() => onSelect(tier)}
-            className={`group relative overflow-hidden rounded-2xl border p-5 text-left transition-all duration-300 cursor-pointer ${
+            className={`group relative overflow-hidden rounded-2xl border p-5 text-left transition-all duration-300 ease-out cursor-pointer ${
               selected ? theme.activeClass : theme.inactiveClass
             }`}
             style={{
