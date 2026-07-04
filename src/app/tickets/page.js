@@ -6,7 +6,8 @@ import { useSession } from 'next-auth/react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   MessageSquare, Plus, Send, X, Loader2, AlertCircle, 
-  CheckCircle, Ticket, ArrowLeft, Shield, Calendar, HelpCircle 
+  CheckCircle, Ticket, ArrowLeft, Shield, Calendar, HelpCircle,
+  Tag, RefreshCw, Landmark, ArrowUpRight
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -24,6 +25,8 @@ function TicketsPageContent() {
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState('product'); // product | topup | gacha | other
   const [newDescription, setNewDescription] = useState('');
+  const [selectedTxId, setSelectedTxId] = useState('');
+  const [isRefundRequested, setIsRefundRequested] = useState(false);
   const [formError, setFormError] = useState('');
 
   const [replyMessage, setReplyMessage] = useState('');
@@ -37,6 +40,17 @@ function TicketsPageContent() {
   // Read query params for pre-filled report from inventory page
   const searchParams = useSearchParams();
 
+  // Query: User Transactions (for referencing in tickets)
+  const { data: userTransactions = [] } = useQuery({
+    queryKey: ['user-transactions-for-tickets'],
+    queryFn: async () => {
+      const res = await fetch('/api/transactions');
+      if (!res.ok) throw new Error('ไม่สามารถโหลดประวัติธุรกรรมได้');
+      return res.json();
+    },
+    enabled: status === 'authenticated',
+  });
+
   useEffect(() => {
     const isReport = searchParams.get('report');
     if (isReport === 'true' && status === 'authenticated') {
@@ -44,9 +58,12 @@ function TicketsPageContent() {
       const desc = searchParams.get('desc') || '';
       const amount = searchParams.get('amount') || '';
       const txId = searchParams.get('txId') || '';
+
       setNewCategory('product');
       setNewTitle(`แจ้งปัญหาสินค้า: ${product}`);
-      setNewDescription(`รายการที่มีปัญหา:\nสินค้า: ${product}\nรายละเอียดการซื้อ: ${desc}\nยอดเงิน: ${amount} THB\nTransaction ID: ${txId}\n\nรายละเอียดปัญหา: `);
+      setSelectedTxId(txId);
+      setNewDescription(`รายละเอียดสินค้าที่มีปัญหา:\nสินค้า: ${product}\nยอดชำระ: ${amount} THB\nรายละเอียดคีย์: ${desc}`);
+      setIsRefundRequested(true); // Auto request refund if reported from inventory
       setCreateModalOpen(true);
     }
   }, [searchParams, status]);
@@ -100,6 +117,8 @@ function TicketsPageContent() {
       setNewTitle('');
       setNewCategory('product');
       setNewDescription('');
+      setSelectedTxId('');
+      setIsRefundRequested(false);
       setFormError('');
     },
     onError: (err) => {
@@ -155,10 +174,16 @@ function TicketsPageContent() {
       setFormError('กรุณากรอกหัวข้อและคำอธิบายปัญหาให้ครบถ้วน');
       return;
     }
+
+    let finalDescription = newDescription;
+    if (selectedTxId) {
+      finalDescription = `[คำร้องขอคืนเงิน: ${isRefundRequested ? 'ใช่' : 'ไม่ใช่'}]\n[Transaction ID: ${selectedTxId}]\n\n${finalDescription}`;
+    }
+
     createTicketMutation.mutate({
       title: newTitle,
       category: newCategory,
-      description: newDescription,
+      description: finalDescription,
     });
   };
 
@@ -176,7 +201,7 @@ function TicketsPageContent() {
     switch (cat) {
       case 'product': return 'ปัญหาเกี่ยวกับสินค้า';
       case 'topup': return 'ปัญหาการเติมเงิน';
-      case 'gacha': return 'กิจกรรมสุ่มก๊าซา';
+      case 'gacha': return 'กิจกรรมสุ่มกาชา';
       default: return 'ติดต่อสอบถามทั่วไป';
     }
   };
@@ -184,15 +209,42 @@ function TicketsPageContent() {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'open':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-400">รอการตรวจสอบ</span>;
+        return <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-amber-500/10 border border-amber-500/20 text-amber-400">รอการตรวจสอบ</span>;
       case 'replied':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 border border-sky-500/20 text-sky-400">ตอบกลับแล้ว</span>;
+        return <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">ตอบกลับแล้ว</span>;
       case 'closed':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-500/10 border border-white/5 text-zinc-500">ปิดคำร้องแล้ว</span>;
+        return <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-zinc-800 border border-white/5 text-zinc-500">ปิดคำร้องแล้ว</span>;
       default:
         return null;
     }
   };
+
+  // Filter transactions based on selected category in the form
+  const eligibleTransactions = userTransactions.filter(tx => {
+    if (tx.status !== 'completed') return false;
+    if (newCategory === 'product') {
+      return tx.type === 'purchase' && !tx.description.includes('Gacha');
+    }
+    if (newCategory === 'gacha') {
+      return tx.type === 'purchase' && tx.description.includes('Gacha');
+    }
+    if (newCategory === 'topup') {
+      return tx.type === 'topup';
+    }
+    return false;
+  });
+
+  // Extract linked transaction details for the active chat header
+  let linkedTx = null;
+  let isRefundReq = false;
+  if (selectedTicket) {
+    const txIdMatch = selectedTicket.description?.match(/Transaction ID:\s*([a-f0-9\-]{36})/i);
+    isRefundReq = selectedTicket.description?.includes('[คำร้องขอคืนเงิน: ใช่]');
+    if (txIdMatch) {
+      const linkedTxId = txIdMatch[1];
+      linkedTx = userTransactions.find(t => t._id === linkedTxId || t.id === linkedTxId);
+    }
+  }
 
   if (status === 'loading') {
     return (
@@ -211,38 +263,40 @@ function TicketsPageContent() {
       <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-12 flex-1 flex flex-col relative z-10 space-y-6">
         
         {/* Breadcrumb / Title */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/5 pb-6">
           <div>
-            <h1 className="text-xl sm:text-2xl font-black text-white glow-text flex items-center gap-2">
-              <MessageSquare className="w-6 h-6 text-sky-400" />
-              ศูนย์ตั๋วช่วยเหลือ / แจ้งปัญหาหลังการขาย
+            <h1 className="text-2xl sm:text-3xl font-black bg-gradient-to-r from-sky-400 via-blue-500 to-purple-500 bg-clip-text text-transparent leading-normal flex items-center gap-2">
+              <MessageSquare className="w-7 h-7 text-sky-400" />
+              ศูนย์บริการลูกค้า & แจ้งปัญหาหลังการขาย
             </h1>
-            <p className="text-xs text-zinc-400 mt-1">สามารถแจ้งเรื่อง ไอดีมีปัญหา เงินไม่เข้า หรือติดต่อสอบถามอื่นๆ แอดมินจะตอบกลับโดยเร็วที่สุด</p>
+            <p className="text-xs text-zinc-400">
+              แจ้งปัญหาคีย์ใช้งานไม่ได้ ยอดเงินไม่เข้าระเบียบ หรือขอคืนเครดิต แอดมินและฝ่ายบริการลูกค้าของ NakataShop พร้อมดูแลคุณ 24 ชั่วโมง
+            </p>
           </div>
           {status === 'authenticated' && (
             <button
               onClick={() => setCreateModalOpen(true)}
-              className="inline-flex items-center justify-center gap-1.5 bg-sky-500 text-sky-950 font-bold px-4 py-2.5 rounded-xl hover:bg-sky-400 transition-all text-xs glow-btn cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 bg-sky-500 text-sky-950 font-bold px-5 py-3 rounded-xl hover:bg-sky-400 transition-all text-xs glow-btn cursor-pointer shadow-lg shadow-sky-500/10"
             >
               <Plus className="w-4 h-4" />
-              เปิดตั๋วช่วยเหลือใหม่
+              เปิดตั๋วคำร้องใหม่
             </button>
           )}
         </div>
 
         {status !== 'authenticated' ? (
           /* NOT LOGGED IN STATE */
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-12 bg-zinc-950/40 border border-white/5 rounded-3xl backdrop-blur-md min-h-[400px] space-y-4">
-            <AlertCircle className="w-12 h-12 text-zinc-700" />
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-12 bg-zinc-950/40 border border-white/5 rounded-3xl backdrop-blur-md min-h-[400px] space-y-4 shadow-xl">
+            <AlertCircle className="w-12 h-12 text-zinc-600" />
             <div className="space-y-1">
-              <h2 className="text-sm font-bold text-zinc-400">เข้าสู่ระบบเพื่อใช้งานระบบแจ้งเรื่องช่วยเหลือ</h2>
-              <p className="text-[11px] text-zinc-500">กรุณาเข้าสู่ระบบก่อนเปิดคำร้องเรียนเพื่ออ้างอิงรหัสข้อมูลประวัติการซื้อของคุณ</p>
+              <h2 className="text-base font-bold text-zinc-300">เข้าสู่ระบบเพื่อติดต่อเจ้าหน้าที่</h2>
+              <p className="text-xs text-zinc-500">กรุณาเข้าสู่ระบบก่อนเปิดเรื่องช่วยเหลือ เพื่ออ้างอิงกับประวัติบัญชีการซื้อขายของคุณได้อย่างแม่นยำ</p>
             </div>
             <Link
               href="/auth/signin"
-              className="bg-sky-500 text-sky-950 px-6 py-2.5 rounded-xl text-xs font-bold hover:bg-sky-400 transition-all"
+              className="bg-sky-500 text-sky-950 px-6 py-3 rounded-xl text-xs font-bold hover:bg-sky-400 transition-all shadow-md shadow-sky-500/10"
             >
-              เข้าสู่ระบบทันที
+              เข้าสู่ระบบสมาชิก
             </Link>
           </div>
         ) : (
@@ -251,9 +305,9 @@ function TicketsPageContent() {
             
             {/* 1. Ticket list sidebar (Visible on mobile only if no ticket selected) */}
             <div className={`space-y-3 lg:block ${selectedTicketId ? 'hidden' : 'block'}`}>
-              <div className="bg-zinc-950/40 border border-white/5 p-4 rounded-2xl">
-                <span className="text-xs font-bold text-white block">ตั๋วคำร้องทั้งหมดของคุณ ({tickets.length})</span>
-                <span className="text-[10px] text-zinc-500">คลิกที่รายการตั๋วเพื่อเปิดอ่านสนทนาล่าสุด</span>
+              <div className="bg-zinc-950/40 border border-white/5 p-4 rounded-2xl backdrop-blur-md">
+                <span className="text-xs font-bold text-white block">รายการตั๋วคำร้องของคุณ ({tickets.length})</span>
+                <span className="text-[10px] text-zinc-500">เลือกตั๋วเพื่อเปิดตรวจสอบข้อความโต้ตอบ</span>
               </div>
 
               <div className="space-y-2 overflow-y-auto max-h-[550px] pr-1">
@@ -263,33 +317,33 @@ function TicketsPageContent() {
                     <span>กำลังโหลดตั๋วคำร้อง...</span>
                   </div>
                 ) : tickets.length === 0 ? (
-                  <div className="glass p-8 text-center text-zinc-500 rounded-xl border border-white/5 text-[11px]">
-                    คุณยังไม่มีการเปิดตั๋วช่วยเหลือในขณะนี้
+                  <div className="bg-zinc-950/20 p-8 text-center text-zinc-500 rounded-3xl border border-white/5 text-[11px] backdrop-blur-md">
+                    คุณยังไม่เคยเปิดประวัติแจ้งคำร้องช่วยเหลือใดๆ
                   </div>
                 ) : (
                   tickets.map((ticket) => (
                     <button
                       key={ticket._id}
                       onClick={() => setSelectedTicketId(ticket._id)}
-                      className={`w-full text-left p-4 rounded-2xl border transition-all cursor-pointer block space-y-2.5 ${
+                      className={`w-full text-left p-4 rounded-3xl border transition-all cursor-pointer block space-y-2.5 shadow-md ${
                         selectedTicketId === ticket._id 
-                          ? 'bg-sky-500/5 border-sky-500/20 text-white shadow-lg' 
+                          ? 'bg-sky-500/5 border-sky-500/25 text-white' 
                           : 'bg-zinc-950/40 border-white/5 text-zinc-400 hover:bg-zinc-900/40 hover:text-white'
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[9px] bg-zinc-900 px-2 py-0.5 rounded font-bold border border-white/5 text-zinc-400">
+                        <span className="text-[9px] bg-[#03060d] px-2 py-0.5 rounded-lg font-bold border border-white/5 text-zinc-400">
                           {getCategoryLabel(ticket.category)}
                         </span>
                         {getStatusBadge(ticket.status)}
                       </div>
                       <h3 className="text-xs font-bold truncate leading-snug">{ticket.title}</h3>
-                      <div className="flex justify-between items-center text-[9px] text-zinc-500 font-sans">
+                      <div className="flex justify-between items-center text-[9px] text-zinc-500 font-sans border-t border-white/5 pt-2">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
                           {new Date(ticket.createdAt).toLocaleDateString('th-TH')}
                         </span>
-                        <span>#{ticket._id.substring(0, 8)}</span>
+                        <span>#{ticket._id.substring(0, 8).toUpperCase()}</span>
                       </div>
                     </button>
                   ))
@@ -298,15 +352,15 @@ function TicketsPageContent() {
             </div>
 
             {/* 2. Chat Live panel (Visible on mobile only if a ticket is selected) */}
-            <div className={`lg:col-span-2 flex flex-col border border-white/5 rounded-3xl bg-zinc-950/30 backdrop-blur-md overflow-hidden ${selectedTicketId ? 'flex' : 'hidden lg:flex items-center justify-center text-center p-12'}`}>
+            <div className={`lg:col-span-2 flex flex-col border border-white/5 rounded-3xl bg-zinc-950/30 backdrop-blur-md overflow-hidden shadow-xl ${selectedTicketId ? 'flex' : 'hidden lg:flex items-center justify-center text-center p-12'}`}>
               {selectedTicketId && selectedTicket ? (
                 <>
                   {/* Chat header */}
-                  <div className="p-4 border-b border-white/5 bg-zinc-950/40 flex items-center justify-between">
+                  <div className="p-4 border-b border-white/5 bg-zinc-950/45 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setSelectedTicketId(null)}
-                        className="lg:hidden p-1 rounded-lg border border-white/5 text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                        className="lg:hidden p-2 rounded-xl border border-white/5 text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer mr-1"
                       >
                         <ArrowLeft className="w-4 h-4" />
                       </button>
@@ -315,35 +369,74 @@ function TicketsPageContent() {
                           <h2 className="text-xs font-bold text-white">{selectedTicket.title}</h2>
                           {getStatusBadge(selectedTicket.status)}
                         </div>
-                        <span className="text-[10px] text-zinc-500 block font-sans">หมวดหมู่: {getCategoryLabel(selectedTicket.category)} • ตั๋วไอดี: #{selectedTicket._id}</span>
+                        <span className="text-[9px] text-zinc-500 block font-sans mt-0.5">หมวดหมู่: {getCategoryLabel(selectedTicket.category)} • ตั๋วไอดี: #{selectedTicket._id}</span>
                       </div>
                     </div>
 
                     {selectedTicket.status !== 'closed' && (
                       <button
                         onClick={() => {
-                          if (window.confirm('คุณแน่ใจหรือไม่ว่าปัญหานี้ได้รับการแก้ไขแล้ว และต้องการปิดตั๋วคำร้องนี้?')) {
+                          if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการปิดตั๋วบริการเรื่องนี้? (เมื่อปิดแล้วจะไม่สามารถส่งแชทเพิ่มได้)')) {
                             closeTicketMutation.mutate(selectedTicket._id);
                           }
                         }}
                         disabled={closeTicketMutation.isPending}
-                        className="text-[10px] font-bold bg-zinc-900 border border-white/5 hover:border-red-500/20 text-zinc-400 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                        className="text-[9px] font-bold bg-[#030712] border border-white/5 hover:border-red-500/20 text-zinc-400 hover:text-red-400 px-3 py-2 rounded-xl transition-all cursor-pointer disabled:opacity-50"
                       >
-                        {closeTicketMutation.isPending ? 'กำลังบันทึก...' : 'กดปิดคำร้องสำเร็จ'}
+                        {closeTicketMutation.isPending ? 'กำลังบันทึก...' : 'ปิดตั๋วปัญหานี้'}
                       </button>
                     )}
                   </div>
 
                   {/* Chat message box log */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[300px] max-h-[400px]">
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[300px] max-h-[420px]">
+                    
+                    {/* Linked Transaction Summary Box */}
+                    {linkedTx && (
+                      <div className="bg-[#0b1424]/80 border border-sky-500/15 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-md shadow-md animate-[fadeIn_0.3s_ease-out]">
+                        <div className="space-y-1">
+                          <span className="text-[8px] bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-max">ธุรกรรมอ้างอิง</span>
+                          <h4 className="text-xs font-bold text-white leading-normal truncate max-w-[280px] sm:max-w-sm pt-1">
+                            {linkedTx.description.split('\n')[0]}
+                          </h4>
+                          <p className="text-[10px] text-zinc-400 font-mono">
+                            ยอดเงิน: {Math.abs(linkedTx.amount).toLocaleString()} THB · วันที่: {new Date(linkedTx.createdAt).toLocaleDateString('th-TH')}
+                          </p>
+                        </div>
+                        {isRefundReq && (
+                          <div className="shrink-0 flex items-center">
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-black border ${
+                              selectedTicket.status === 'closed'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-amber-500/10 text-amber-400 border-amber-500/25 animate-pulse'
+                            }`}>
+                              {selectedTicket.status === 'closed' ? 'คืนเงินสำเร็จแล้ว' : 'ขอเงินคืน (กำลังตรวจสอบ)'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {messagesLoading ? (
                       <div className="h-full flex flex-col items-center justify-center text-xs text-zinc-500 gap-1.5 py-12">
                         <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
-                        <span>กำลังดึงข้อความพูดคุยล่าสุด...</span>
+                        <span>กำลังดึงข้อความสนทนาล่าสุด...</span>
                       </div>
                     ) : (
-                      messages.map((msg, index) => {
+                      messages.map((msg) => {
                         const isSelf = msg.user_id === session.user.id && !msg.is_admin_reply;
+                        const isSystem = msg.message?.startsWith('🤖 ระบบ:');
+
+                        if (isSystem) {
+                          return (
+                            <div key={msg._id} className="flex justify-center items-center py-2.5 animate-in fade-in-30">
+                              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-full px-5 py-2 text-[10px] text-emerald-400 font-bold tracking-wide shadow-lg shadow-emerald-500/5">
+                                {msg.message}
+                              </div>
+                            </div>
+                          );
+                        }
+
                         return (
                           <div 
                             key={msg._id} 
@@ -352,18 +445,18 @@ function TicketsPageContent() {
                             }`}
                           >
                             <div className="flex items-center gap-1.5 text-[9px] text-zinc-500 font-sans">
-                              {msg.is_admin_reply && <Shield className="w-3 h-3 text-sky-400" />}
-                              <span className={msg.is_admin_reply ? 'text-sky-400 font-bold' : ''}>
-                                {msg.is_admin_reply ? 'แอดมินสนับสนุน' : msg.user?.username || 'คุณ'}
+                              {msg.is_admin_reply && <Shield className="w-3 h-3 text-purple-400" />}
+                              <span className={msg.is_admin_reply ? 'text-purple-400 font-bold' : ''}>
+                                {msg.is_admin_reply ? 'เจ้าหน้าที่แอดมิน' : msg.user?.username || 'คุณ'}
                               </span>
                               <span>•</span>
-                              <span>{new Date(msg.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
+                              <span className="font-mono">{new Date(msg.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</span>
                             </div>
-                            <div className={`p-3 rounded-2xl text-xs break-all leading-relaxed whitespace-pre-wrap ${
+                            <div className={`p-3.5 rounded-2xl text-xs break-all leading-relaxed whitespace-pre-wrap shadow-md ${
                               isSelf 
-                                ? 'bg-sky-500 text-sky-950 rounded-tr-none font-medium' 
+                                ? 'bg-gradient-to-br from-sky-500 to-sky-600 text-sky-950 rounded-tr-none font-bold shadow-sky-500/10' 
                                 : msg.is_admin_reply 
-                                  ? 'bg-sky-950/30 border border-sky-500/20 text-sky-200 rounded-tl-none font-medium'
+                                  ? 'bg-[#0f0b18] border border-purple-500/20 text-purple-200 rounded-tl-none font-semibold shadow-purple-500/5'
                                   : 'bg-zinc-900 border border-white/5 text-zinc-200 rounded-tl-none'
                             }`}>
                               {msg.message}
@@ -376,10 +469,10 @@ function TicketsPageContent() {
                   </div>
 
                   {/* Chat input box */}
-                  <div className="p-4 border-t border-white/5 bg-zinc-950/40">
+                  <div className="p-4 border-t border-white/5 bg-zinc-950/45">
                     {selectedTicket.status === 'closed' ? (
-                      <div className="p-3 bg-zinc-900 border border-white/5 rounded-xl text-center text-xs text-zinc-500 font-sans">
-                        🔒 ตั๋วคำร้องนี้ได้รับการปิดการสนทนาเรียบร้อยแล้ว หากพบปัญหาใหม่กรุณาเปิดตั๋วฉบับใหม่
+                      <div className="p-3.5 bg-zinc-900/60 border border-white/5 rounded-2xl text-center text-xs text-zinc-500 font-sans">
+                        🔒 ตั๋วบริการช่วยเหลือนี้ถูกปิดแล้ว เนื่องจากได้รับข้อยุติหรือดำเนินการคืนเงินเรียบร้อย
                       </div>
                     ) : (
                       <form onSubmit={handleSendReply} className="space-y-2">
@@ -391,17 +484,17 @@ function TicketsPageContent() {
                             type="text"
                             value={replyMessage}
                             onChange={(e) => setReplyMessage(e.target.value)}
-                            placeholder="พิมพ์ข้อความรายละเอียดเพื่อคุยกับแอดมิน..."
-                            className="flex-1 bg-[#03060d] border border-white/5 px-4 py-3 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500/30 font-sans"
+                            placeholder="พิมพ์ข้อความตอบกลับหรือสอบถามแอดมินเพิ่มเติม..."
+                            className="flex-1 bg-[#03060d] border border-white/5 px-4 py-3.5 rounded-xl text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-sky-500/30 transition-all font-sans"
                             disabled={sendReplyMutation.isPending}
                           />
                           <button
                             type="submit"
                             disabled={sendReplyMutation.isPending || !replyMessage.trim()}
-                            className="bg-sky-500 text-sky-950 font-bold px-4 rounded-xl hover:bg-sky-400 transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center shrink-0"
+                            className="bg-sky-500 text-sky-950 font-bold px-5 rounded-xl hover:bg-sky-400 transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center shrink-0"
                           >
                             {sendReplyMutation.isPending ? (
-                              <Loader2 className="w-4.5 h-4.5 animate-spin" />
+                              <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
                               <Send className="w-4.5 h-4.5" />
                             )}
@@ -413,11 +506,11 @@ function TicketsPageContent() {
                 </>
               ) : (
                 /* CHAT PLACEHOLDER SCREEN */
-                <div className="space-y-3 py-16">
+                <div className="space-y-3 py-24 text-center">
                   <Ticket className="w-12 h-12 stroke-[1.2] text-zinc-700 mx-auto" />
                   <div>
-                    <h3 className="text-xs font-bold text-zinc-400">ยังไม่มีการเลือกตั๋วสนทนา</h3>
-                    <p className="text-[10px] text-zinc-500">กรุณาเลือกประวัติเรื่องร้องเรียนจากทางฝั่งซ้าย เพื่อเปิดอ่านรายละเอียด</p>
+                    <h3 className="text-xs font-bold text-zinc-400">ยังไม่มีการเลือกห้องสนทนา</h3>
+                    <p className="text-[10px] text-zinc-500">กรุณาคลิกเลือกตั๋วคำร้องด้านซ้าย หรือกดปุ่มเปิดตั๋วใหม่ด้านบนเพื่อคุยกับฝ่ายเทคนิค</p>
                   </div>
                 </div>
               )}
@@ -431,7 +524,7 @@ function TicketsPageContent() {
 
       {/* CREATE NEW TICKET MODAL */}
       {createModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs font-sans">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs font-sans">
           <div className="absolute inset-0" onClick={() => setCreateModalOpen(false)} />
           <div className="relative w-full max-w-lg bg-[#060c13] border border-white/5 p-6 rounded-2xl shadow-2xl glass z-10 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <button
@@ -444,9 +537,9 @@ function TicketsPageContent() {
             <div className="mb-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
                 <Ticket className="w-4.5 h-4.5 text-sky-400" />
-                <span>เปิดตั๋วช่วยเหลือแจ้งเรื่องใหม่</span>
+                <span>เปิดส่งรายงานแจ้งปัญหาการชำระเงิน/สินค้า</span>
               </h3>
-              <p className="text-[10px] text-zinc-500">กรอกข้อมูลปัญหาที่คุณพบล่าสุดเพื่อให้แอดมินตรวจสอบ</p>
+              <p className="text-[10px] text-zinc-500">แอดมิน NakataShop จะเร่งตรวจสอบและแก้ปัญหาของท่านโดยด่วนที่สุด</p>
             </div>
 
             {formError && (
@@ -458,39 +551,102 @@ function TicketsPageContent() {
 
             <form onSubmit={handleCreateTicketSubmit} className="space-y-4">
               <div className="space-y-1">
+                <label className="text-[11px] text-zinc-400 font-semibold block">หมวดหมู่ปัญหา *</label>
+                <select
+                  value={newCategory}
+                  onChange={(e) => {
+                    setNewCategory(e.target.value);
+                    setSelectedTxId('');
+                    setIsRefundRequested(false);
+                  }}
+                  className="w-full bg-[#03060d] border border-white/5 px-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-sky-500 font-sans"
+                >
+                  <option value="product">ปัญหาเกี่ยวกับสินค้า (คีย์การ์ด / บัญชีสตรีมมิ่ง)</option>
+                  <option value="topup">ปัญหาเกี่ยวกับการเติมเงิน (ยอดเงินไม่เข้า)</option>
+                  <option value="gacha">ปัญหาเกี่ยวกับรางวัลกิจกรรมกาชา</option>
+                  <option value="other">สอบถามข้อมูลอื่นๆ</option>
+                </select>
+              </div>
+
+              {/* Linked Transaction Dropdown (Visible if eligible) */}
+              {newCategory !== 'other' && (
+                <div className="space-y-1">
+                  <label className="text-[11px] text-zinc-400 font-semibold block">
+                    เชื่อมโยงกับธุรกรรมประวัติ * {userTransactions.length === 0 && <span className="text-[9px] text-zinc-600">(ไม่มีประวัติ)</span>}
+                  </label>
+                  <select
+                    value={selectedTxId}
+                    onChange={(e) => {
+                      setSelectedTxId(e.target.value);
+                      setIsRefundRequested(false);
+                    }}
+                    className="w-full bg-[#03060d] border border-white/5 px-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-sky-500 font-sans"
+                  >
+                    <option value="">-- ไม่เชื่อมโยง (แจ้งเรื่องทั่วไป) --</option>
+                    {eligibleTransactions.map(tx => (
+                      <option key={tx._id || tx.id} value={tx._id || tx.id}>
+                        {new Date(tx.createdAt).toLocaleDateString('th-TH')} - {tx.description.split('\n')[0]} ({Math.abs(tx.amount)} THB)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Selected Transaction Summary */}
+              {selectedTxId && (
+                <div className="bg-[#03060d] border border-white/5 rounded-xl p-3.5 space-y-1 animate-[fadeIn_0.2s_ease-out]">
+                  {(() => {
+                    const tx = userTransactions.find(t => t._id === selectedTxId || t.id === selectedTxId);
+                    if (!tx) return null;
+                    return (
+                      <>
+                        <p className="text-[10px] text-zinc-300 font-bold truncate">{tx.description.split('\n')[0]}</p>
+                        <div className="flex justify-between text-[9px] text-zinc-500 font-mono">
+                          <span>ยอดเงิน: {Math.abs(tx.amount).toLocaleString()} THB</span>
+                          <span>ไอดี: #{tx._id?.substring(0, 8) || tx.id?.substring(0, 8)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Wallet Refund request checkbox */}
+              {selectedTxId && newCategory !== 'topup' && (
+                <div className="flex items-center gap-2 bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl animate-[fadeIn_0.2s_ease-out]">
+                  <input
+                    type="checkbox"
+                    id="requestRefund"
+                    checked={isRefundRequested}
+                    onChange={(e) => setIsRefundRequested(e.target.checked)}
+                    className="w-4 h-4 rounded accent-amber-500 cursor-pointer"
+                  />
+                  <label htmlFor="requestRefund" className="text-[10px] text-amber-400 font-extrabold select-none cursor-pointer">
+                    ต้องการยื่นเรื่องขอเงินคืน (Wallet Refund) สำหรับคีย์เสียรายการนี้
+                  </label>
+                </div>
+              )}
+
+              <div className="space-y-1">
                 <label className="text-[11px] text-zinc-400 font-semibold block">หัวข้อเรื่องร้องเรียน *</label>
                 <input
                   type="text"
                   required
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="เช่น ยอดเงินหลังเติมไม่เพิ่มครับ หรือ ไอดี Netflix ถูกเปลี่ยนพาส"
+                  placeholder="เช่น รหัสบัตรสตรีมมิ่งที่ซื้อใช้งานไม่ได้ครับ"
                   className="w-full bg-[#03060d] border border-white/5 px-3.5 py-2.5 rounded-xl text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] text-zinc-400 font-semibold block">หมวดหมู่ปัญหา *</label>
-                <select
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  className="w-full bg-[#03060d] border border-white/5 px-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-sky-500 font-sans"
-                >
-                  <option value="product">ปัญหาเกี่ยวกับสินค้า (คีย์ใช้ไม่ได้ / ไอดีติดปัญหา)</option>
-                  <option value="topup">ปัญหาเกี่ยวกับการเติมเงิน (โอนเงินแล้วยอดเงินไม่ขึ้น)</option>
-                  <option value="gacha">ปัญหาเกี่ยวกับกิจกรรมวงล้อก๊าซา</option>
-                  <option value="other">สอบถามข้อมูล/แจ้งเรื่องอื่นๆ</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] text-zinc-400 font-semibold block">คำอธิบายรายละเอียดปัญหาทั้งหมด *</label>
+                <label className="text-[11px] text-zinc-400 font-semibold block">รายละเอียดปัญหาเพิ่มเติม *</label>
                 <textarea
                   required
-                  rows={4}
+                  rows={3}
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="กรุณากรอกข้อมูลปัญหาโดยละเอียด เช่น ชื่อบัญชี Netflix ที่พบล่าสุด, เลขรหัสสติกเกอร์ Topup อ้างอิง หรืออาการเสียต่างๆ เพื่อความรวดเร็วในการดูแล"
+                  placeholder="กรุณากรอกอาการปัญหาโดยละเอียด เพื่อให้ฝ่ายเทคนิคเร่งทำการเคลมและแก้ไขให้ได้อย่างรวดเร็ว"
                   className="w-full bg-[#03060d] border border-white/5 px-3.5 py-2.5 rounded-xl text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-sky-500 resize-none font-sans"
                 />
               </div>
@@ -498,14 +654,14 @@ function TicketsPageContent() {
               <button
                 type="submit"
                 disabled={createTicketMutation.isPending}
-                className="w-full flex items-center justify-center gap-1.5 bg-sky-500 text-sky-950 font-bold py-3 rounded-xl hover:bg-sky-400 transition-all text-xs glow-btn disabled:opacity-50 cursor-pointer"
+                className="w-full flex items-center justify-center gap-1.5 bg-sky-500 text-sky-950 font-bold py-3.5 rounded-xl hover:bg-sky-400 transition-all text-xs glow-btn disabled:opacity-50 cursor-pointer"
               >
                 {createTicketMutation.isPending ? (
                   <Loader2 className="w-4.5 h-4.5 animate-spin" />
                 ) : (
                   <>
                     <CheckCircle className="w-4 h-4" />
-                    <span>ยืนยันการเปิดเรื่องแจ้งปัญหา</span>
+                    <span>ยืนยันและเปิดส่งตั๋วรายงานเรื่อง</span>
                   </>
                 )}
               </button>

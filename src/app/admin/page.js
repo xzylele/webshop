@@ -206,6 +206,29 @@ export default function AdminPage() {
     }
   });
 
+  // Mutation: Admin Refund Ticket
+  const adminRefundTicketMutation = useMutation({
+    mutationFn: async (ticketId) => {
+      const res = await fetch('/api/admin/support/refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to refund ticket');
+      return data;
+    },
+    onSuccess: (data) => {
+      alert(`ดำเนินการคืนเงินสำเร็จจำนวน ${data.refundAmount} THB แก่ลูกค้าแล้ว!`);
+      queryClient.invalidateQueries({ queryKey: ['admin-tickets'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-ticket-messages', selectedAdminTicketId] });
+      queryClient.invalidateQueries({ queryKey: ['all-transactions'] });
+    },
+    onError: (err) => {
+      alert(`ไม่สามารถอนุมัติคืนเงินได้: ${err.message}`);
+    }
+  });
+
   // Query: Users
   const { data: users = [], isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users', userSearch],
@@ -2474,6 +2497,21 @@ const createGachaTierMutation = useMutation({
               {selectedAdminTicketId && adminTickets.find(t => t._id === selectedAdminTicketId) ? (
                 (() => {
                   const currentTicket = adminTickets.find(t => t._id === selectedAdminTicketId);
+                  const txIdMatch = currentTicket?.description?.match(/Transaction ID:\s*([a-f0-9\-]{36})/i);
+                  const isRefundReq = currentTicket?.description?.includes('[คำร้องขอคืนเงิน: ใช่]');
+                  
+                  let linkedTx = null;
+                  let isAlreadyRefunded = false;
+
+                  if (txIdMatch) {
+                    const linkedTxId = txIdMatch[1];
+                    linkedTx = allTransactions.find(t => t._id === linkedTxId || t.id === linkedTxId);
+                    isAlreadyRefunded = allTransactions.some(tx => 
+                      (tx.type === 'refund' || tx.type === 'topup') && 
+                      tx.description?.includes(`คืนเงินตั๋วช่วยเหลือ #${currentTicket._id.substring(0, 8)}`)
+                    );
+                  }
+
                   return (
                     <>
                       {/* Chat header */}
@@ -2501,7 +2539,7 @@ const createGachaTierMutation = useMutation({
                                 adminCloseTicketMutation.mutate(currentTicket._id);
                               }
                             }}
-                            disabled={adminCloseTicketMutation.isPending}
+                            disabled={adminCloseTicketMutation.isPending || adminRefundTicketMutation.isPending}
                             className="text-[10px] font-bold bg-zinc-900 border border-white/5 hover:border-red-500/20 text-zinc-400 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                           >
                             {adminCloseTicketMutation.isPending ? 'กำลังบันทึก...' : 'ปิดตั๋วคำร้องนี้'}
@@ -2509,7 +2547,73 @@ const createGachaTierMutation = useMutation({
                         )}
                       </div>
 
-                      {/* Chat messages list */}
+                      {/* Linked Transaction & Refund Controls for Admin */}
+                      {linkedTx && (
+                        <div className="bg-zinc-950/45 border-b border-white/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="space-y-1">
+                            <span className="text-[8px] bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-max">ธุรกรรมอ้างอิงของตั๋ว</span>
+                            <h4 className="text-xs font-bold text-white leading-normal truncate max-w-sm pt-1">
+                              {linkedTx.description.split('\n')[0]}
+                            </h4>
+                            <p className="text-[10px] text-zinc-400 font-mono">
+                              ยอดชำระ: {Math.abs(linkedTx.amount).toLocaleString()} THB · วันที่: {new Date(linkedTx.createdAt).toLocaleDateString('th-TH')}
+                            </p>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <div className="mr-2">
+                              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-black border ${
+                                isAlreadyRefunded
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                  : isRefundReq
+                                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/25 animate-pulse'
+                                    : 'bg-zinc-800 text-zinc-400 border-white/5'
+                              }`}>
+                                {isAlreadyRefunded 
+                                  ? '✅ คืนเงินเครดิตแล้ว' 
+                                  : isRefundReq 
+                                    ? '🚨 ยื่นขอคืนเงิน' 
+                                    : '🔗 เชื่อมโยงธุรกรรม'}
+                              </span>
+                            </div>
+                            
+                            {!isAlreadyRefunded && currentTicket.status !== 'closed' && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm(`คุณแน่ใจว่าต้องการปฏิเสธการคืนเงินสำหรับธุรกรรมนี้ และปิดตั๋วคำร้องช่วยเหลือเลยใช่หรือไม่?`)) {
+                                      adminSendReplyMutation.mutate({
+                                        ticketId: currentTicket._id,
+                                        message: '🤖 ระบบ: คำขอคืนเงินสำหรับรายการนี้ได้รับการตรวจสอบแล้วและไม่ได้รับการอนุมัติ (ระบบได้ทำการปิดใช้งานตั๋วนี้)'
+                                      }, {
+                                        onSuccess: () => {
+                                          adminCloseTicketMutation.mutate(currentTicket._id);
+                                        }
+                                      });
+                                    }
+                                  }}
+                                  disabled={adminSendReplyMutation.isPending || adminCloseTicketMutation.isPending}
+                                  className="text-[10px] font-bold bg-[#0a0505] border border-red-500/20 hover:bg-red-950/10 text-red-400 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 shadow-md shadow-red-500/5"
+                                >
+                                  ❌ ไม่คืนเงิน
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm(`คุณแน่ใจว่าต้องการอนุมัติคืนเงินเครดิตจำนวน ${Math.abs(linkedTx.amount).toLocaleString()} THB แก่ผู้ใช้งาน ${currentTicket.user?.username || 'ลูกค้า'}? (ระบบจะเติมเงินและปิดตั๋วนี้ทันที)`)) {
+                                      adminRefundTicketMutation.mutate(currentTicket._id);
+                                    }
+                                  }}
+                                  disabled={adminRefundTicketMutation.isPending}
+                                  className="text-[10px] font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/15"
+                                >
+                                  {adminRefundTicketMutation.isPending ? 'กำลังประมวลผล...' : '💸 อนุมัติคืนเงิน'}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[300px] max-h-[400px]">
                         {adminTicketMessagesLoading ? (
                           <div className="h-full flex flex-col items-center justify-center text-xs text-zinc-500 gap-1.5 py-12">
@@ -2519,6 +2623,18 @@ const createGachaTierMutation = useMutation({
                         ) : (
                           adminTicketMessages.map((msg) => {
                             const isSelf = msg.is_admin_reply;
+                            const isSystem = msg.message?.startsWith('🤖 ระบบ:');
+
+                            if (isSystem) {
+                              return (
+                                <div key={msg._id} className="flex justify-center items-center py-2.5 w-full">
+                                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-full px-5 py-2 text-[10px] text-emerald-400 font-bold tracking-wide shadow-lg">
+                                    {msg.message}
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             return (
                               <div
                                 key={msg._id}

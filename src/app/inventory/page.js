@@ -3,24 +3,25 @@
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery } from '@tanstack/react-query';
-import { 
-  Clock, 
-  Wallet, 
-  ShoppingBag, 
-  Copy, 
-  Check, 
-  Search, 
-  Award, 
-  RefreshCw, 
-  LogIn, 
-  AlertCircle, 
-  MessageSquare, 
-  Ticket, 
-  Calendar, 
-  Tag, 
+import {
+  Clock,
+  Wallet,
+  ShoppingBag,
+  Copy,
+  Check,
+  Search,
+  Award,
+  RefreshCw,
+  LogIn,
+  AlertCircle,
+  MessageSquare,
+  Ticket,
+  Calendar,
+  Tag,
   CheckCircle,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  Landmark
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -29,7 +30,7 @@ import { getUserRank, RANKS } from '@/lib/ranks';
 import Link from 'next/link';
 
 // ─── ฟังก์ชันคัดแยกคีย์สินค้า/โค้ดรางวัลจากประวัติ ───
-function parseKeysFromTransactions(transactionsList) {
+function parseKeysFromTransactions(transactionsList, refundedTxIds = new Set()) {
   if (!transactionsList || !Array.isArray(transactionsList)) return [];
   const keys = [];
 
@@ -39,6 +40,7 @@ function parseKeysFromTransactions(transactionsList) {
     const desc = tx.description || '';
     const lines = desc.split('\n').map(l => l.trim());
     const firstLine = lines[0] || '';
+    const isRefunded = refundedTxIds.has(tx.id);
 
     // 1. ตรวจจับรางวัลจากการหมุนวงล้อ Gacha
     if (firstLine.startsWith('[สุ่มวงล้อ Gacha:')) {
@@ -59,6 +61,7 @@ function parseKeysFromTransactions(transactionsList) {
               code: code,
               date: tx.createdAt,
               price: tx.amount,
+              isRefunded: isRefunded,
             });
           });
         }
@@ -82,6 +85,7 @@ function parseKeysFromTransactions(transactionsList) {
               code: code,
               date: tx.createdAt,
               price: tx.amount,
+              isRefunded: isRefunded,
             });
           }
         }
@@ -100,6 +104,7 @@ function parseKeysFromTransactions(transactionsList) {
           code: code,
           date: tx.createdAt,
           price: tx.amount,
+          isRefunded: isRefunded,
         });
       });
     }
@@ -131,6 +136,17 @@ export default function InventoryPage() {
     queryFn: async () => {
       const res = await fetch('/api/coupons/my-coupons');
       if (!res.ok) throw new Error('เกิดข้อผิดพลาดในการโหลดคูปองสะสม');
+      return res.json();
+    },
+    enabled: !!session,
+  });
+
+  // ดึงข้อมูลตั๋วช่วยเหลือสะสมเพื่อนำมาคำนวณสถานะการคืนเงิน
+  const { data: tickets = [] } = useQuery({
+    queryKey: ['user-tickets-for-inventory'],
+    queryFn: async () => {
+      const res = await fetch('/api/support/tickets');
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: !!session,
@@ -168,8 +184,24 @@ export default function InventoryPage() {
     }
   }
 
+  // ─── ประมวลผลหา Transaction ID ที่ทำการคืนเงินสำเร็จแล้ว ───
+  const refundedTxIds = new Set();
+  tickets.forEach(ticket => {
+    // ตรวจสอบว่าในรายการธุรกรรมทั้งหมดมีบิลคืนเงินสำหรับตั๋วบริการนี้หรือไม่
+    const hasRefundTx = transactions.some(tx => 
+      (tx.type === 'refund' || (tx.type === 'topup' && tx.description?.includes('คืนเงินตั๋วช่วยเหลือ'))) &&
+      tx.description?.includes(`#${ticket._id.substring(0, 8)}`)
+    );
+    if (hasRefundTx) {
+      const txIdMatch = ticket.description?.match(/Transaction ID:\s*([a-f0-9\-]{36})/i);
+      if (txIdMatch) {
+        refundedTxIds.add(txIdMatch[1]);
+      }
+    }
+  });
+
   // แยกคีย์สินค้าและของรางวัลจากธุรกรรมทั้งหมด
-  const parsedKeys = parseKeysFromTransactions(transactions);
+  const parsedKeys = parseKeysFromTransactions(transactions, refundedTxIds);
 
   // การกรองข้อมูลแยกตามแท็บที่เลือกและช่องค้นหา (Search)
   const filteredKeys = parsedKeys.filter(k => {
@@ -201,7 +233,7 @@ export default function InventoryPage() {
       <Navbar />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8 relative z-10 space-y-8">
-        
+
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/5 pb-6">
           <div>
@@ -251,7 +283,7 @@ export default function InventoryPage() {
         ) : (
           /* Logged In Content */
           <div className="space-y-8">
-            
+
             {/* Premium Header Stats Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 animate-[fadeSlideUp_0.5s_ease-out]">
               {/* Balance Card */}
@@ -331,15 +363,15 @@ export default function InventoryPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              
+
               {/* Left Column: VIP Card & Stats details */}
               <div className="space-y-6 lg:col-span-1">
-                
+
                 {/* VIP Card */}
                 {userRank && (
                   <div className="bg-zinc-950/40 border border-white/5 rounded-3xl p-6 backdrop-blur-md space-y-6 shadow-xl relative overflow-hidden group">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-sky-500/5 rounded-full blur-3xl group-hover:bg-sky-500/10 transition-all duration-500" />
-                    
+
                     <div className="flex items-center gap-3">
                       <div className="bg-gradient-to-r from-sky-400 to-blue-600 p-3.5 rounded-2xl text-sky-950">
                         <Award className="w-6 h-6" />
@@ -375,7 +407,7 @@ export default function InventoryPage() {
                       </div>
 
                       <div className="relative w-full h-3 bg-zinc-900 border border-white/5 rounded-full overflow-hidden">
-                        <div 
+                        <div
                           className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-sky-500 via-blue-500 to-purple-500 transition-all duration-500"
                           style={{ width: `${progressPercent}%` }}
                         />
@@ -399,17 +431,17 @@ export default function InventoryPage() {
 
               {/* Right Column: Search, Filter, and categorized panels */}
               <div className="lg:col-span-2 space-y-6">
-                
+
                 {/* Search & Tabs Panel */}
                 <div className="bg-zinc-950/45 border border-white/5 rounded-3xl p-5 backdrop-blur-md flex flex-col md:flex-row gap-4 items-center justify-between shadow-lg">
-                  
+
                   {/* Tabs */}
                   <div className="flex bg-zinc-900 border border-white/5 p-1.5 rounded-2xl w-full md:w-auto shrink-0 overflow-x-auto scrollbar-none font-sans">
                     {[
                       { id: 'keys', label: 'คีย์สินค้า & รางวัล' },
                       { id: 'coupons', label: 'คูปองของฉัน' },
                       { id: 'billing', label: 'ประวัติการเงิน' },
-                      { id: 'all', label: 'ประวัติบิลทั้งหมด' }
+                      //d: 'all', label: 'ประวัติบิลทั้งหมด' }
                     ].map(tab => (
                       <button
                         key={tab.id}
@@ -417,11 +449,10 @@ export default function InventoryPage() {
                           setActiveTab(tab.id);
                           setSearch(''); // ล้างช่องค้นหาเวลาสลับแท็บ
                         }}
-                        className={`flex-1 md:flex-initial text-xs font-bold px-4 py-2.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
-                          activeTab === tab.id
+                        className={`flex-1 md:flex-initial text-xs font-bold px-4 py-2.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${activeTab === tab.id
                             ? 'bg-sky-500 text-sky-950 shadow-lg'
                             : 'text-zinc-400 hover:text-white'
-                        }`}
+                          }`}
                       >
                         {tab.label}
                       </button>
@@ -436,7 +467,7 @@ export default function InventoryPage() {
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder={
                         activeTab === 'keys' ? "ค้นหาชื่อสินค้าหรือรหัสคีย์..." :
-                        activeTab === 'coupons' ? "ค้นหารหัสโค้ดคูปอง..." : "ค้นหาประวัติชำระเงิน..."
+                          activeTab === 'coupons' ? "ค้นหารหัสโค้ดคูปอง..." : "ค้นหาประวัติชำระเงิน..."
                       }
                       className="w-full bg-zinc-900 border border-white/5 text-zinc-200 placeholder-zinc-500 text-xs px-4 py-2.5 pl-9 rounded-xl outline-none focus:border-sky-500/30 transition-all font-medium"
                     />
@@ -447,7 +478,7 @@ export default function InventoryPage() {
 
                 {/* Tab content panels */}
                 <div className="space-y-4">
-                  
+
                   {/* 1. KEYS & PRIZES TAB */}
                   {activeTab === 'keys' && (
                     isLoading ? (
@@ -467,9 +498,13 @@ export default function InventoryPage() {
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-[fadeIn_0.4s_ease-out]">
                         {filteredKeys.map((keyItem) => (
-                          <div 
+                          <div
                             key={keyItem.id}
-                            className="bg-gradient-to-br from-zinc-950/60 to-zinc-900/60 border border-white/5 hover:border-sky-500/20 p-5 rounded-3xl backdrop-blur-md relative overflow-hidden group shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(56,189,248,0.05)]"
+                            className={`bg-gradient-to-br from-zinc-950/60 to-zinc-900/60 border p-5 rounded-3xl backdrop-blur-md relative overflow-hidden group shadow-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(56,189,248,0.05)] ${
+                              keyItem.isRefunded 
+                                ? 'opacity-60 border-red-500/10 hover:border-red-500/20' 
+                                : 'border-white/5 hover:border-sky-500/20'
+                            }`}
                           >
                             {/* Decorative background glow on hover */}
                             <div className="absolute inset-0 bg-gradient-to-r from-sky-500/0 via-sky-500/[0.01] to-purple-500/0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
@@ -477,14 +512,20 @@ export default function InventoryPage() {
                             <div className="space-y-4">
                               <div className="flex justify-between items-start gap-2">
                                 <div className="space-y-1">
-                                  <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider border ${
-                                    keyItem.source.startsWith('Gacha') 
-                                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/15'
-                                      : 'bg-sky-500/10 text-sky-400 border-sky-500/15'
-                                  }`}>
-                                    <Tag className="w-2.5 h-2.5" />
-                                    {keyItem.source}
-                                  </span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider border ${keyItem.source.startsWith('Gacha')
+                                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/15'
+                                        : 'bg-sky-500/10 text-sky-400 border-sky-500/15'
+                                      }`}>
+                                      <Tag className="w-2.5 h-2.5" />
+                                      {keyItem.source}
+                                    </span>
+                                    {keyItem.isRefunded && (
+                                      <span className="px-2 py-0.5 rounded-lg text-[9px] font-black bg-red-500/15 border border-red-500/20 text-red-400">
+                                        คืนเงินสำเร็จ
+                                      </span>
+                                    )}
+                                  </div>
                                   <h4 className="text-sm font-bold text-white leading-normal pt-1.5 group-hover:text-sky-400 transition-colors">
                                     {keyItem.name}
                                   </h4>
@@ -514,13 +555,19 @@ export default function InventoryPage() {
 
                               <div className="flex justify-between items-center pt-2 border-t border-white/5 text-[10px] text-zinc-500">
                                 <span className="font-mono">ค่าบริการ: {Math.abs(keyItem.price).toLocaleString()} THB</span>
-                                <Link
-                                  href={`/tickets?report=true&txId=${keyItem.txId}&product=${encodeURIComponent(keyItem.name)}&amount=${Math.abs(keyItem.price)}`}
-                                  className="flex items-center gap-1 text-amber-500/80 hover:text-amber-400 font-bold transition-colors"
-                                >
-                                  <MessageSquare className="w-3.5 h-3.5" />
-                                  <span>แจ้งปัญหาคีย์</span>
-                                </Link>
+                                {keyItem.isRefunded ? (
+                                  <span className="flex items-center gap-1 text-red-400 font-bold font-sans">
+                                    🔒 คืนเงินแล้ว
+                                  </span>
+                                ) : (
+                                  <Link
+                                    href={`/tickets?report=true&txId=${keyItem.txId}&product=${encodeURIComponent(keyItem.name)}&amount=${Math.abs(keyItem.price)}`}
+                                    className="flex items-center gap-1 text-amber-500/80 hover:text-amber-400 font-bold transition-colors"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    <span>แจ้งปัญหาคีย์</span>
+                                  </Link>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -551,13 +598,12 @@ export default function InventoryPage() {
                           const isUsed = cp.status === 'used';
                           const isExpired = cp.status === 'expired';
                           const isInactive = cp.status === 'inactive';
-                          
+
                           return (
                             <div
                               key={cp.id}
-                              className={`relative overflow-hidden bg-gradient-to-tr from-zinc-950/60 to-zinc-900/60 border rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between gap-4 transition-all hover:border-sky-500/20 ${
-                                isUsed ? 'opacity-40 border-white/5 shadow-none' : isExpired || isInactive ? 'border-red-500/10' : 'border-sky-500/20 shadow-md'
-                              }`}
+                              className={`relative overflow-hidden bg-gradient-to-tr from-zinc-950/60 to-zinc-900/60 border rounded-3xl p-5 backdrop-blur-md flex flex-col justify-between gap-4 transition-all hover:border-sky-500/20 ${isUsed ? 'opacity-40 border-white/5 shadow-none' : isExpired || isInactive ? 'border-red-500/10' : 'border-sky-500/20 shadow-md'
+                                }`}
                             >
                               {/* Dotted Ticket Separation Line */}
                               <div className="absolute left-1/4 top-0 bottom-0 border-r border-dashed border-white/5 pointer-events-none" />
@@ -575,13 +621,12 @@ export default function InventoryPage() {
                                     </h4>
                                   </div>
                                   <span
-                                    className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${
-                                      isUsed
+                                    className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border ${isUsed
                                         ? 'bg-zinc-800 text-zinc-400 border-zinc-700'
                                         : isExpired || isInactive
-                                        ? 'bg-red-500/10 text-red-400 border-red-500/10'
-                                        : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 animate-pulse'
-                                    }`}
+                                          ? 'bg-red-500/10 text-red-400 border-red-500/10'
+                                          : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 animate-pulse'
+                                      }`}
                                   >
                                     {isUsed ? 'ใช้ไปแล้ว' : isExpired ? 'หมดอายุ' : isInactive ? 'ปิดบริการ' : 'คูปองพร้อมใช้'}
                                   </span>
@@ -653,6 +698,7 @@ export default function InventoryPage() {
                       <div className="space-y-4 animate-[fadeIn_0.4s_ease-out]">
                         {filteredBilling.map((tx) => {
                           const isPurchase = tx.type === 'purchase';
+                          const isRefund = tx.type === 'refund' || (tx.type === 'topup' && tx.description?.includes('คืนเงินตั๋วช่วยเหลือ'));
                           const dateStr = new Date(tx.createdAt).toLocaleString('th-TH', {
                             dateStyle: 'medium',
                             timeStyle: 'short',
@@ -664,16 +710,23 @@ export default function InventoryPage() {
                               className="bg-zinc-950/40 border border-white/5 rounded-3xl p-5 backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all hover:border-white/10"
                             >
                               <div className="space-y-3 flex-1">
-                                
+
                                 <div className="flex items-center gap-3">
                                   <span
                                     className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
-                                      isPurchase
-                                        ? 'bg-red-500/10 text-red-400 border border-red-500/10'
-                                        : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10'
+                                      isRefund
+                                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                        : isPurchase
+                                          ? 'bg-red-500/10 text-red-400 border border-red-500/10'
+                                          : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/10'
                                     }`}
                                   >
-                                    {isPurchase ? (
+                                    {isRefund ? (
+                                      <>
+                                        <Landmark className="w-3 h-3" />
+                                        คืนเงินเครดิต / รีฟัน
+                                      </>
+                                    ) : isPurchase ? (
                                       <>
                                         <ShoppingBag className="w-3 h-3" />
                                         ชำระเงิน / สปินกิ๊ฟท์
@@ -695,14 +748,18 @@ export default function InventoryPage() {
                               </div>
 
                               <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-3 border-t md:border-t-0 pt-3 md:pt-0 border-white/5">
-                                
+
                                 {/* Cost/Amount */}
                                 <div
                                   className={`text-base font-black font-mono ${
-                                    isPurchase ? 'text-red-400' : 'text-emerald-400'
+                                    isRefund
+                                      ? 'text-amber-400'
+                                      : isPurchase
+                                        ? 'text-red-400'
+                                        : 'text-emerald-400'
                                   }`}
                                 >
-                                  {isPurchase ? '' : '+'}
+                                  {isRefund ? '+' : isPurchase ? '' : '+'}
                                   {tx.amount.toLocaleString()} THB
                                 </div>
 
