@@ -62,7 +62,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
   };
 
   const navItems = [
-    { label: 'หน้าแรก', href: '/', icon: Home },
+    //{ label: 'หน้าแรก', href: '/', icon: Home },
     { label: 'สินค้าทั้งหมด', href: '/products', icon: ShoppingBag },
     { label: 'เติมเงิน', href: '/topup', icon: Wallet },
     { label: 'วงล้อ Gacha', href: '/gacha', icon: Award },
@@ -74,7 +74,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-white/5 bg-[#02060d]/70 backdrop-blur-md">
       <div className="mx-auto flex max-w-7xl h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        
+
         {/* Left Side: Brand Name & Navigation Links */}
         <div className="flex items-center gap-8">
           <Link href="/" className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
@@ -92,41 +92,41 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-sky-400 ${
-                    isActive ? 'text-sky-400' : 'text-zinc-400'
-                  }`}
+                  className={`flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-sky-400 ${isActive ? 'text-sky-400' : 'text-zinc-400'
+                    }`}
                 >
                   <Icon className="w-4 h-4" />
                   {item.label}
                 </Link>
               );
             })}
-            
+
             {/* Contact Link */}
-            <Link
-              href="/tickets"
-              className={`flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-sky-400 ${
-                pathname === '/tickets' ? 'text-sky-400' : 'text-zinc-400'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              ติดต่อเรา / แจ้งปัญหา
-            </Link>
+            {session?.user?.role !== 'admin' && (
+              <Link
+                href="/tickets"
+                className={`flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-sky-400 ${pathname === '/tickets' ? 'text-sky-400' : 'text-zinc-400'
+                  }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                ติดต่อเรา / แจ้งปัญหา
+              </Link>
+            )}
           </nav>
         </div>
 
         {/* Right Side: User Actions, Wallet */}
         <div className="flex items-center gap-4">
-          
+
           {/* Cart Icon Button */}
           <Link href="/cart" className="relative p-2 rounded-full border border-white/5 hover:border-sky-500/20 hover:bg-zinc-900/40 text-zinc-400 hover:text-sky-400 flex items-center justify-center active:scale-95" title="ตะกร้าสินค้า">
-          <ShoppingCart className="w-4 h-4" />
-          {cartCount > 0 && (
-            <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-sky-500 text-sky-950 font-black rounded-full flex items-center justify-center text-[9px] animate-pulse">
-              {cartCount}
-            </span>
-          )}
-        </Link>
+            <ShoppingCart className="w-4 h-4" />
+            {cartCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4.5 h-4.5 bg-sky-500 text-sky-950 font-black rounded-full flex items-center justify-center text-[9px] animate-pulse">
+                {cartCount}
+              </span>
+            )}
+          </Link>
 
           {/* Admin Notification Bell */}
           <AdminNotificationBell />
@@ -136,9 +136,8 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
             <Link
               href="/admin"
               title="จัดการระบบหลังบ้าน (Admin Panel)"
-              className={`p-2 rounded-full border border-white/5 hover:border-sky-500/20 hover:bg-zinc-900/40 text-zinc-400 hover:text-sky-400 flex items-center justify-center active:scale-95 transition-all ${
-                pathname === '/admin' ? 'text-sky-400 border-sky-500/20 bg-sky-950/20' : ''
-              }`}
+              className={`p-2 rounded-full border border-white/5 hover:border-sky-500/20 hover:bg-zinc-900/40 text-zinc-400 hover:text-sky-400 flex items-center justify-center active:scale-95 transition-all ${pathname === '/admin' ? 'text-sky-400 border-sky-500/20 bg-sky-950/20' : ''
+                }`}
             >
               <Sliders className="w-4 h-4 text-sky-400" />
             </Link>
@@ -157,7 +156,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
               {/* Wallet & Points Group */}
               <div className="flex items-center gap-2">
                 {/* Wallet */}
-                <div 
+                <div
                   onClick={handleRefreshBalance}
                   title="ยอดเงินกระเป๋า (คลิกเพื่ออัปเดต)"
                   className="flex items-center gap-1.5 bg-sky-950/40 hover:bg-sky-950/60 border border-sky-500/20 px-2.5 py-1.5 rounded-full text-[11px] font-semibold text-sky-400 cursor-pointer transition-all active:scale-95 shrink-0"
@@ -165,9 +164,9 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
                   <Wallet className="w-3.5 h-3.5" />
                   <span>{session.user.balance?.toLocaleString() || 0} THB</span>
                 </div>
-                
+
                 {/* Points */}
-                <Link 
+                <Link
                   href="/point-shop"
                   title="พอยท์สะสมของคุณ (ไปหน้าร้านค้าแลกพอยท์)"
                   className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 px-2.5 py-1.5 rounded-full text-[11px] font-semibold text-amber-500 cursor-pointer transition-all active:scale-95 shrink-0"
@@ -233,34 +232,33 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
                   key={item.href}
                   href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
-                    pathname === item.href ? 'bg-sky-500/10 text-sky-400' : 'text-zinc-400 hover:bg-white/5 hover:text-white'
-                  }`}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${pathname === item.href ? 'bg-sky-500/10 text-sky-400' : 'text-zinc-400 hover:bg-white/5 hover:text-white'
+                    }`}
                 >
                   <Icon className="w-4 h-4" />
                   {item.label}
                 </Link>
               );
             })}
-            
-            <Link
-              href="/tickets"
-              onClick={() => setMobileMenuOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
-                pathname === '/tickets' ? 'bg-sky-500/10 text-sky-400' : 'text-zinc-400 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-4.5 h-4.5" />
-              ติดต่อเรา / แจ้งปัญหา
-            </Link>
+
+            {session?.user?.role !== 'admin' && (
+              <Link
+                href="/tickets"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${pathname === '/tickets' ? 'bg-sky-500/10 text-sky-400' : 'text-zinc-400 hover:bg-white/5 hover:text-white'
+                  }`}
+              >
+                <MessageSquare className="w-4.5 h-4.5" />
+                ติดต่อเรา / แจ้งปัญหา
+              </Link>
+            )}
 
             {session?.user?.role === 'admin' && (
               <Link
                 href="/admin"
                 onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
-                  pathname === '/admin' ? 'bg-sky-500/10 text-sky-400' : 'text-zinc-400 hover:bg-white/5 hover:text-white'
-                }`}
+                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${pathname === '/admin' ? 'bg-sky-500/10 text-sky-400' : 'text-zinc-400 hover:bg-white/5 hover:text-white'
+                  }`}
               >
                 <Sliders className="w-4 h-4 text-sky-400" />
                 จัดการระบบ (Admin)
@@ -299,7 +297,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
                     </span>
                   </div>
                 )}
-                
+
                 <Link
                   href="/inventory"
                   onClick={() => setMobileMenuOpen(false)}
