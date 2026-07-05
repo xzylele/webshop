@@ -112,19 +112,6 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
               <MessageSquare className="w-4 h-4" />
               ติดต่อเรา / แจ้งปัญหา
             </Link>
-
-            {/* Admin Dashboard Link */}
-            {session?.user?.role === 'admin' && (
-              <Link
-                href="/admin"
-                className={`flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-sky-400 ${
-                  pathname === '/admin' ? 'text-sky-400' : 'text-zinc-400'
-                }`}
-              >
-                <Sliders className="w-4 h-4 text-sky-400 animate-pulse" />
-                จัดการระบบ (Admin)
-              </Link>
-            )}
           </nav>
         </div>
 
@@ -143,6 +130,19 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
 
           {/* Admin Notification Bell */}
           <AdminNotificationBell />
+
+          {/* Admin Dashboard Icon Link */}
+          {session?.user?.role === 'admin' && (
+            <Link
+              href="/admin"
+              title="จัดการระบบหลังบ้าน (Admin Panel)"
+              className={`p-2 rounded-full border border-white/5 hover:border-sky-500/20 hover:bg-zinc-900/40 text-zinc-400 hover:text-sky-400 flex items-center justify-center active:scale-95 transition-all ${
+                pathname === '/admin' ? 'text-sky-400 border-sky-500/20 bg-sky-950/20' : ''
+              }`}
+            >
+              <Sliders className="w-4 h-4 text-sky-400" />
+            </Link>
+          )}
 
           {/* User Session Info */}
           {session ? (
