@@ -84,7 +84,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="hidden md:flex items-center gap-4 lg:gap-6 shrink-0">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
@@ -92,7 +92,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-2 text-sm font-medium transition-colors hover:text-sky-400 ${
+                  className={`flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-sky-400 ${
                     isActive ? 'text-sky-400' : 'text-zinc-400'
                   }`}
                 >
@@ -105,7 +105,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
             {/* Contact Link */}
             <Link
               href="/tickets"
-              className={`flex items-center gap-2 text-sm font-medium transition-colors hover:text-sky-400 ${
+              className={`flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-sky-400 ${
                 pathname === '/tickets' ? 'text-sky-400' : 'text-zinc-400'
               }`}
             >
@@ -117,7 +117,7 @@ export default function Navbar({ onOpenContact, onOpenHistory }) {
             {session?.user?.role === 'admin' && (
               <Link
                 href="/admin"
-                className={`flex items-center gap-2 text-sm font-medium transition-colors hover:text-sky-400 ${
+                className={`flex items-center gap-2 text-sm font-medium whitespace-nowrap transition-colors hover:text-sky-400 ${
                   pathname === '/admin' ? 'text-sky-400' : 'text-zinc-400'
                 }`}
               >
