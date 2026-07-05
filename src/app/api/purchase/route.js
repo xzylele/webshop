@@ -198,15 +198,104 @@ export async function POST(request) {
       }
     }
 
+    // ดึงข้อมูลค่าตั้งค่าแคมเปญแต้มคูณสอง (X2)
+    const { data: x2Setting } = await supabaseAdmin
+      .from('global_settings')
+      .select('value')
+      .eq('key', 'double_points_event')
+      .maybeSingle();
+    const isX2Active = x2Setting?.value === true || x2Setting?.value === 'true';
+
+    // คำนวณแต้มสะสมจากการสั่งซื้อ
+    let multiplier = 1.0;
+    if (userRank.name === 'Bronze VIP') multiplier = 1.1;
+    else if (userRank.name === 'Silver VIP') multiplier = 1.2;
+    else if (userRank.name === 'Gold VIP') multiplier = 1.3;
+    else if (userRank.name === 'Platinum VIP') multiplier = 1.5;
+
+    const basePoints = Math.floor(finalPrice / 10); // 1 แต้มทุกๆ 10 บาท
+    let pointsEarned = Math.floor(basePoints * multiplier);
+    if (isX2Active) {
+      pointsEarned = pointsEarned * 2;
+    }
+
     const nextBalance = Number(user.balance) - finalPrice;
     const nextTotalSpent = (Number(user.total_spent) || 0) + finalPrice;
 
-    // หักยอดเงิน และบวกสะสมยอดใช้จ่ายจริง (totalSpent)
+    // ตรวจสอบยศใหม่หลังใช้จ่ายสะสมเพิ่มขึ้น
+    const userRankAfter = getUserRank(nextTotalSpent);
+    const RANKS_NAMES = ['Member', 'Bronze VIP', 'Silver VIP', 'Gold VIP', 'Platinum VIP'];
+    const oldRankIdx = RANKS_NAMES.indexOf(userRank.name);
+    const newRankIdx = RANKS_NAMES.indexOf(userRankAfter.name);
+    const lastRewardedRankIdx = RANKS_NAMES.indexOf(user.last_rewarded_rank || 'Member');
+
+    let finalBalanceAfterRewards = nextBalance;
+    let userPoints = Number(user.points) || 0;
+    let finalPointsAfterRewards = userPoints + pointsEarned;
+    let nextLastRewardedRank = user.last_rewarded_rank || 'Member';
+    let rankUpInfo = null;
+
+    if (newRankIdx > lastRewardedRankIdx) {
+      let promoCreditReward = 0;
+      let promoPointReward = 0;
+      for (let i = lastRewardedRankIdx + 1; i <= newRankIdx; i++) {
+        const rName = RANKS_NAMES[i];
+        if (rName === 'Bronze VIP') { promoCreditReward += 50; promoPointReward += 100; }
+        else if (rName === 'Silver VIP') { promoCreditReward += 150; promoPointReward += 300; }
+        else if (rName === 'Gold VIP') { promoCreditReward += 500; promoPointReward += 1000; }
+        else if (rName === 'Platinum VIP') { promoCreditReward += 1500; promoPointReward += 3000; }
+      }
+
+      if (promoCreditReward > 0 || promoPointReward > 0) {
+        finalBalanceAfterRewards += promoCreditReward;
+        finalPointsAfterRewards += promoPointReward;
+        nextLastRewardedRank = userRankAfter.name;
+        rankUpInfo = {
+          from: user.last_rewarded_rank || 'Member',
+          to: userRankAfter.name,
+          creditReward: promoCreditReward,
+          pointReward: promoPointReward
+        };
+
+        // บันทึกธุรกรรมโบนัสเครดิตเลื่อนยศ
+        if (promoCreditReward > 0) {
+          await supabaseAdmin
+            .from('transactions')
+            .insert([
+              {
+                user_id: user.id,
+                type: 'adjust',
+                amount: promoCreditReward,
+                description: `รางวัลเลื่อนยศสมาชิกเป็น ${userRankAfter.name} 🎉 (+${promoCreditReward} THB)`,
+                status: 'completed'
+              }
+            ]);
+        }
+
+        // บันทึกธุรกรรมโบนัสพอยท์เลื่อนยศ
+        if (promoPointReward > 0) {
+          await supabaseAdmin
+            .from('point_transactions')
+            .insert([
+              {
+                user_id: user.id,
+                type: 'earn',
+                amount: promoPointReward,
+                description: `โบนัสแต้มสะสมจากการเลื่อนยศเป็น ${userRankAfter.name} 🎉`
+              }
+            ]);
+        }
+      }
+    }
+
+    // อัปเดตข้อมูลผู้ใช้งาน (หักเงิน, เพิ่มสะสมยอดซื้อ, เพิ่มพอยท์, เซฟยศรางวัลเคลม)
     const { error: userUpdateErr } = await supabaseAdmin
       .from('users')
       .update({
-        balance: nextBalance,
-        total_spent: nextTotalSpent
+        balance: finalBalanceAfterRewards,
+        total_spent: nextTotalSpent,
+        points: finalPointsAfterRewards,
+        last_rewarded_rank: nextLastRewardedRank
       })
       .eq('id', user.id);
 
@@ -232,7 +321,7 @@ export async function POST(request) {
     const codesStr = purchasedCodes.join('\n');
     const description = `ซื้อสินค้า: ${product.name} x${qty}${rankDesc}${couponDesc}\n${codesStr}`;
 
-    // บันทึก Transaction
+    // บันทึก Transaction การซื้อสินค้า
     const { data: transaction, error: txError } = await supabaseAdmin
       .from('transactions')
       .insert([
@@ -249,6 +338,37 @@ export async function POST(request) {
       .single();
 
     if (txError) throw txError;
+
+    // บันทึกแต้มสะสมที่ได้จากการซื้อ
+    if (pointsEarned > 0) {
+      await supabaseAdmin
+        .from('point_transactions')
+        .insert([
+          {
+            user_id: user.id,
+            type: 'earn',
+            amount: pointsEarned,
+            description: `ได้รับแต้มจากการซื้อสินค้า: ${product.name} x${qty} (คูณยศ: ${multiplier}x${isX2Active ? ' x2 กิจกรรม' : ''})`
+          }
+        ]);
+    }
+
+    // บันทึกความคืบหน้าเควสซื้อของรายวัน (Daily Purchase Quest)
+    try {
+      const todayStr = new Date().toLocaleDateString('en-CA'); // รูปแบบ YYYY-MM-DD ตาม timezone ท้องถิ่น
+      await supabaseAdmin
+        .from('user_quests')
+        .insert([
+          {
+            user_id: user.id,
+            quest_type: 'daily_purchase',
+            completed_date: todayStr,
+            is_claimed: false
+          }
+        ]);
+    } catch (questErr) {
+      // ข้ามกรณีทำเควสซ้ำในวันเดียวกัน
+    }
 
     // อัปเดตคีย์โค้ดว่าถูกใช้งานแล้ว
     if (product.stock_type === 'code') {
@@ -274,10 +394,12 @@ export async function POST(request) {
 
     return NextResponse.json({
       message: 'ซื้อสินค้าสำเร็จแล้ว!',
-      newBalance: nextBalance,
+      newBalance: finalBalanceAfterRewards,
       newTotalSpent: nextTotalSpent,
+      newPoints: finalPointsAfterRewards,
       transaction,
       receivedCodes: purchasedCodes,
+      rankUpInfo,
     });
   } catch (error) {
     console.error('Purchase error:', error);

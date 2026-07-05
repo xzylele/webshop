@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Sliders, Plus, Edit2, Trash2, Users, ShoppingBag, Layers,
   CheckSquare, ArrowLeft, Loader2, Landmark, Smartphone, CreditCard, ShoppingCart,
-  Tag, Power, Trash, DollarSign, Shield, ShieldAlert, Award, UserPlus, AlertCircle, User, Key, Save, X, Send, Ticket
+  Tag, Power, Trash, DollarSign, Shield, ShieldAlert, Award, UserPlus, AlertCircle, User, Key, Save, X, Send, Ticket, Coins
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -60,6 +60,7 @@ export default function AdminPage() {
   const [adjustAmount, setAdjustAmount] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
   const [adjustSpent, setAdjustSpent] = useState(''); // ยอดซื้อสะสม (ใช้ปรับเปลี่ยนยศ Rank)
+  const [adjustPoints, setAdjustPoints] = useState(''); // ยอดพอยท์สะสม
   const [adjustError, setAdjustError] = useState('');
 
   // Coupon State
@@ -92,6 +93,19 @@ export default function AdminPage() {
   const [editGachaTopupAmount, setEditGachaTopupAmount] = useState('');
   const [editGachaError, setEditGachaError] = useState('');
 
+  // Point Shop Management States
+  const [pointItemName, setPointItemName] = useState('');
+  const [pointItemDesc, setPointItemDesc] = useState('');
+  const [pointItemCost, setPointItemCost] = useState('');
+  const [pointItemImg, setPointItemImg] = useState('');
+  const [pointItemRewardType, setPointItemRewardType] = useState('credit'); // credit | coupon | code
+  const [pointItemRewardVal, setPointItemRewardVal] = useState(''); // amount / discount / codes list
+  const [pointItemStock, setPointItemStock] = useState('-1');
+  const [pointItemActive, setPointItemActive] = useState(true);
+  const [selectedPointItemToEdit, setSelectedPointItemToEdit] = useState(null);
+  const [pointItemError, setPointItemError] = useState('');
+  const [pointShopAdminSubTab, setPointShopAdminSubTab] = useState('items'); // items | history
+
   // Redirect if not admin
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -120,6 +134,187 @@ export default function AdminPage() {
     },
     enabled: status === 'authenticated' && session?.user?.role === 'admin',
   });
+
+  // Query: Point Shop Items
+  const { data: adminPointShopData = { items: [], isX2Active: false }, isLoading: adminPointShopLoading } = useQuery({
+    queryKey: ['admin-point-shop'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/point-shop');
+      if (!res.ok) throw new Error('Failed to load point shop items');
+      return res.json();
+    },
+    enabled: status === 'authenticated' && session?.user?.role === 'admin',
+  });
+
+  // Mutations: Point Shop Items
+  const toggleX2Mutation = useMutation({
+    mutationFn: async (active) => {
+      const res = await fetch('/api/admin/point-shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'toggle_x2', active }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to toggle X2');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-point-shop'] });
+    },
+  });
+
+  const createPointItemMutation = useMutation({
+    mutationFn: async (payload) => {
+      const res = await fetch('/api/admin/point-shop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'สร้างของรางวัลล้มเหลว');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-point-shop'] });
+      setPointItemName('');
+      setPointItemDesc('');
+      setPointItemCost('');
+      setPointItemImg('');
+      setPointItemRewardType('credit');
+      setPointItemRewardVal('');
+      setPointItemStock('-1');
+      setPointItemActive(true);
+      setPointItemError('');
+    },
+    onError: (err) => {
+      setPointItemError(err.message);
+    }
+  });
+
+  const updatePointItemMutation = useMutation({
+    mutationFn: async (payload) => {
+      const res = await fetch('/api/admin/point-shop', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'แก้ไขของรางวัลล้มเหลว');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-point-shop'] });
+      setSelectedPointItemToEdit(null);
+      setPointItemName('');
+      setPointItemDesc('');
+      setPointItemCost('');
+      setPointItemImg('');
+      setPointItemRewardType('credit');
+      setPointItemRewardVal('');
+      setPointItemStock('-1');
+      setPointItemActive(true);
+      setPointItemError('');
+    },
+    onError: (err) => {
+      setPointItemError(err.message);
+    }
+  });
+
+  const deletePointItemMutation = useMutation({
+    mutationFn: async (id) => {
+      const res = await fetch(`/api/admin/point-shop?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'ลบของรางวัลล้มเหลว');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-point-shop'] });
+    }
+  });
+
+  const handleCreatePointItem = (e) => {
+    e.preventDefault();
+    setPointItemError('');
+    if (!pointItemName || !pointItemCost || isNaN(pointItemCost) || Number(pointItemCost) <= 0) {
+      setPointItemError('กรุณากรอกชื่อและแต้มสะสมที่ต้องการให้ถูกต้อง');
+      return;
+    }
+
+    let parsedRewardData = {};
+    if (pointItemRewardType === 'credit') {
+      parsedRewardData = { amount: Number(pointItemRewardVal) || 0 };
+    } else if (pointItemRewardType === 'coupon') {
+      parsedRewardData = { discount: Number(pointItemRewardVal) || 0 };
+    } else if (pointItemRewardType === 'code') {
+      const codes = pointItemRewardVal.split('\n').map(c => c.trim()).filter(Boolean);
+      parsedRewardData = { codes };
+    }
+
+    createPointItemMutation.mutate({
+      name: pointItemName,
+      description: pointItemDesc,
+      pointCost: Number(pointItemCost),
+      imageUrl: pointItemImg,
+      rewardType: pointItemRewardType,
+      rewardData: parsedRewardData,
+      stock: pointItemStock !== '' ? Number(pointItemStock) : -1,
+      isActive: pointItemActive
+    });
+  };
+
+  const handleEditPointItemSubmit = (e) => {
+    e.preventDefault();
+    setPointItemError('');
+    if (!pointItemName || !pointItemCost || isNaN(pointItemCost) || Number(pointItemCost) <= 0) {
+      setPointItemError('กรุณากรอกชื่อและแต้มสะสมที่ต้องการให้ถูกต้อง');
+      return;
+    }
+
+    let parsedRewardData = {};
+    if (pointItemRewardType === 'credit') {
+      parsedRewardData = { amount: Number(pointItemRewardVal) || 0 };
+    } else if (pointItemRewardType === 'coupon') {
+      parsedRewardData = { discount: Number(pointItemRewardVal) || 0 };
+    } else if (pointItemRewardType === 'code') {
+      const codes = pointItemRewardVal.split('\n').map(c => c.trim()).filter(Boolean);
+      parsedRewardData = { codes };
+    }
+
+    updatePointItemMutation.mutate({
+      id: selectedPointItemToEdit.id,
+      name: pointItemName,
+      description: pointItemDesc,
+      pointCost: Number(pointItemCost),
+      imageUrl: pointItemImg,
+      rewardType: pointItemRewardType,
+      rewardData: parsedRewardData,
+      stock: pointItemStock !== '' ? Number(pointItemStock) : -1,
+      isActive: pointItemActive
+    });
+  };
+
+  const handleStartEditPointItem = (item) => {
+    setSelectedPointItemToEdit(item);
+    setPointItemName(item.name);
+    setPointItemDesc(item.description || '');
+    setPointItemCost(String(item.point_cost));
+    setPointItemImg(item.image_url || '');
+    setPointItemRewardType(item.reward_type);
+    
+    let rewardVal = '';
+    const rData = item.reward_data || {};
+    if (item.reward_type === 'credit') {
+      rewardVal = String(rData.amount || '');
+    } else if (item.reward_type === 'coupon') {
+      rewardVal = String(rData.discount || '');
+    } else if (item.reward_type === 'code') {
+      rewardVal = (rData.codes || []).join('\n');
+    }
+    setPointItemRewardVal(rewardVal);
+    setPointItemStock(String(item.stock));
+    setPointItemActive(item.is_active);
+    setPointItemError('');
+  };
 
   // Query: Products
   const { data: products = [], isLoading: productsLoading } = useQuery({
@@ -262,7 +457,9 @@ export default function AdminPage() {
     },
     enabled: status === 'authenticated' && session?.user?.role === 'admin',
   });
-  const selectedGachaTier = gachaTiers.find(tier => tier.id === selectedGachaTierId) || gachaTiers[0] || null;
+
+  const displayGachaTiers = gachaTiers.filter(tier => tier.slug !== 'point');
+  const selectedGachaTier = displayGachaTiers.find(tier => tier.id === selectedGachaTierId) || displayGachaTiers[0] || null;
 
   const { data: gachaItems = [], isLoading: gachaLoading } = useQuery({
     queryKey: ['admin-gacha', selectedGachaTier?.id],
@@ -272,6 +469,18 @@ export default function AdminPage() {
       return res.json();
     },
     enabled: status === 'authenticated' && session?.user?.role === 'admin' && Boolean(selectedGachaTier?.id),
+  });
+
+  const pointGachaTier = gachaTiers.find(tier => tier.slug === 'point');
+
+  const { data: pointGachaItems = [], isLoading: pointGachaLoading } = useQuery({
+    queryKey: ['admin-point-gacha', pointGachaTier?.id],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/gacha?tierId=' + pointGachaTier.id);
+      if (!res.ok) throw new Error('Failed to load point gacha items');
+      return res.json();
+    },
+    enabled: status === 'authenticated' && session?.user?.role === 'admin' && Boolean(pointGachaTier?.id),
   });
 
   // Query: Banners
@@ -318,6 +527,7 @@ export default function AdminPage() {
       setAdjustAmount('');
       setAdjustReason('');
       setAdjustSpent('');
+      setAdjustPoints('');
       setAdjustError('');
     },
     onError: (err) => {
@@ -440,6 +650,7 @@ const createGachaTierMutation = useMutation({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-gacha'] });
       queryClient.invalidateQueries({ queryKey: ['admin-gacha-tiers'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-point-gacha'] });
       setGachaName('');
       setGachaType('empty');
       setGachaChance('10');
@@ -467,6 +678,7 @@ const createGachaTierMutation = useMutation({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-gacha'] });
       queryClient.invalidateQueries({ queryKey: ['admin-gacha-tiers'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-point-gacha'] });
       setSelectedGachaForStockManagement(null);
       setSelectedGachaToEdit(null);
       setEditGachaName('');
@@ -490,6 +702,7 @@ const createGachaTierMutation = useMutation({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-gacha'] });
       queryClient.invalidateQueries({ queryKey: ['admin-gacha-tiers'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-point-gacha'] });
     }
   });
 
@@ -665,7 +878,23 @@ const createGachaTierMutation = useMutation({
       payload.newTotalSpent = Number(adjustSpent);
     }
 
-    if (payload.balanceAdjustment === undefined && payload.newTotalSpent === undefined) {
+    // 3. ตรวจสอบการปรับแต้มสะสม
+    if (adjustPoints !== '' && adjustPoints !== '0') {
+      if (isNaN(adjustPoints)) {
+        setAdjustError('กรุณากรอกยอดพอยท์ที่ต้องการปรับปรุงให้ถูกต้อง');
+        return;
+      }
+      payload.pointsAdjustment = Number(adjustPoints);
+      if (payload.reason === undefined) {
+        payload.reason = adjustReason || 'ปรับแต้มสะสมโดยผู้ดูแลระบบ';
+      }
+    }
+
+    if (
+      payload.balanceAdjustment === undefined &&
+      payload.newTotalSpent === undefined &&
+      payload.pointsAdjustment === undefined
+    ) {
       setAdjustError('กรุณากรอกอย่างน้อย 1 รายการเพื่ออัปเดต');
       return;
     }
@@ -692,7 +921,7 @@ const createGachaTierMutation = useMutation({
     });
   };
 
-  const handleCreateGachaItem = (e) => {
+  const handleCreateGachaItem = (e, tierIdOverride = null) => {
     e.preventDefault();
     setGachaError('');
     if (!gachaName || !gachaType || gachaChance === '' || isNaN(gachaChance)) {
@@ -708,10 +937,11 @@ const createGachaTierMutation = useMutation({
       return;
     }
 
-    if (!selectedGachaTier) { setGachaError('Please select a gacha tier'); return; }
+    const activeTierId = tierIdOverride || selectedGachaTier?.id;
+    if (!activeTierId) { setGachaError('Please select a gacha tier'); return; }
 
     createGachaItemMutation.mutate({
-      tierId: selectedGachaTier.id,
+      tierId: activeTierId,
       name: gachaName,
       type: gachaType,
       chance: Number(gachaChance),
@@ -806,7 +1036,7 @@ const createGachaTierMutation = useMutation({
         </div>
 
         {/* Tab Buttons Navigation */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 border-b border-white/5 scrollbar-hide">
+        <div className="flex flex-wrap items-center gap-2 pb-4 mb-8 border-b border-white/5">
           <button
             onClick={() => setActiveTab('products')}
             className={`px-5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap border transition-all cursor-pointer duration-300 ${activeTab === 'products'
@@ -885,6 +1115,16 @@ const createGachaTierMutation = useMutation({
               }`}
           >
             ตั๋วช่วยเหลือ / แจ้งปัญหา ({adminTickets.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('point-shop')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap border transition-all cursor-pointer duration-300 ${activeTab === 'point-shop'
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.15)] font-bold'
+                : 'bg-zinc-950/20 border-white/5 text-zinc-400 hover:text-white hover:border-white/10 hover:bg-zinc-900/40'
+              }`}
+          >
+            จัดการ Point Shop ({adminPointShopData.items?.length || 0})
           </button>
         </div>
 
@@ -1328,7 +1568,7 @@ const createGachaTierMutation = useMutation({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in-50 duration-200">
 <div className="lg:col-span-3">
               <AdminGachaTierManager
-                tiers={gachaTiers}
+                tiers={displayGachaTiers}
                 selectedTierId={selectedGachaTier?.id}
                 onSelect={tier => setSelectedGachaTierId(tier.id)}
                 onCreate={payload => createGachaTierMutation.mutate(payload)}
@@ -2721,6 +2961,623 @@ const createGachaTierMutation = useMutation({
           </div>
         )}
 
+        {/* TAB 9: MANAGE POINT SHOP & X2 EVENT */}
+        {activeTab === 'point-shop' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch animate-in fade-in-50 duration-200">
+            {/* Left Col: Config & Add form */}
+            <div className="space-y-6">
+              
+              {/* Double Points Settings Card */}
+              <div className="bg-gradient-to-br from-amber-500/5 via-zinc-950/40 to-transparent border border-amber-500/25 p-6 rounded-3xl backdrop-blur-md space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Coins className="w-5 h-5 text-amber-500" />
+                    <span>แคมเปญกิจกรรมคูณแต้ม 2 เท่า</span>
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 mt-1 leading-normal">
+                    เมื่อเปิดใช้งาน ลูกค้าทุกคนที่ซื้อของด้วยเงินเครดิตจะได้รับพอยท์สะสมเป็น 2 เท่าของอัตราปกติ
+                  </p>
+                </div>
+
+                <div className="flex justify-between items-center py-2 bg-zinc-900/40 border border-white/5 px-4 rounded-xl">
+                  <span className="text-xs text-zinc-300 font-semibold">สถานะแคมเปญขณะนี้:</span>
+                  {adminPointShopData.isX2Active ? (
+                    <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2.5 py-0.5 rounded-full select-none animate-pulse">⚡ กำลังคูณแต้ม 2 เท่า</span>
+                  ) : (
+                    <span className="text-[10px] font-black text-zinc-500 bg-zinc-950 border border-white/5 px-2.5 py-0.5 rounded-full select-none">ปิดใช้งานอยู่</span>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => toggleX2Mutation.mutate(!adminPointShopData.isX2Active)}
+                  disabled={toggleX2Mutation.isPending}
+                  className={`w-full py-3 rounded-xl text-xs font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center gap-2 ${
+                    adminPointShopData.isX2Active
+                      ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20'
+                      : 'bg-gradient-to-r from-amber-500 to-yellow-400 text-amber-950 hover:from-amber-400 shadow-[0_4px_15px_rgba(245,158,11,0.15)]'
+                  }`}
+                >
+                  {toggleX2Mutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : adminPointShopData.isX2Active ? (
+                    <span>ปิดแคมเปญแต้ม X2</span>
+                  ) : (
+                    <span>เปิดกิจกรรมแต้ม X2 ⚡</span>
+                  )}
+                </button>
+              </div>
+
+              {/* Add Point Item Form */}
+              <div className="bg-zinc-950/45 border border-white/5 p-6 rounded-3xl backdrop-blur-md space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    {selectedPointItemToEdit ? 'แก้ไขของรางวัลพอยท์ช็อป' : 'เพิ่มของรางวัลพอยท์ช็อปใหม่'}
+                  </h3>
+                  <p className="text-[10px] text-zinc-500">กรอกข้อมูลเพื่อวางของรางวัลให้ลูกค้าใช้แต้มมาแลก</p>
+                </div>
+
+                {pointItemError && (
+                  <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-xl text-xs text-red-400 flex items-center gap-2">
+                    <AlertCircle className="w-4.5 h-4.5 shrink-0" />
+                    <span>{pointItemError}</span>
+                  </div>
+                )}
+
+                <form onSubmit={selectedPointItemToEdit ? handleEditPointItemSubmit : handleCreatePointItem} className="space-y-4 font-sans text-xs">
+                  <div className="space-y-1">
+                    <label className="text-zinc-400 font-semibold block">ชื่อของรางวัล *</label>
+                    <input
+                      type="text"
+                      required
+                      value={pointItemName}
+                      onChange={(e) => setPointItemName(e.target.value)}
+                      placeholder="เช่น คูปองส่วนลด 50 บาท"
+                      className="w-full bg-[#03060d] border border-white/10 px-3 py-2 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-zinc-400 font-semibold block">คำอธิบายรายละเอียด</label>
+                    <textarea
+                      value={pointItemDesc}
+                      onChange={(e) => setPointItemDesc(e.target.value)}
+                      placeholder="อธิบายสั้นๆ ของรางวัลชิ้นนี้..."
+                      className="w-full h-16 bg-[#03060d] border border-white/10 px-3 py-2 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-zinc-400 font-semibold block">พอยท์ที่ต้องใช้ *</label>
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        value={pointItemCost}
+                        onChange={(e) => setPointItemCost(e.target.value)}
+                        placeholder="เช่น 150"
+                        className="w-full bg-[#03060d] border border-white/10 px-3 py-2 rounded-xl text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-zinc-400 font-semibold block">จำนวนในสต็อก *</label>
+                      <input
+                        type="number"
+                        required
+                        value={pointItemStock}
+                        onChange={(e) => setPointItemStock(e.target.value)}
+                        placeholder="-1 = ไม่จำกัด"
+                        className="w-full bg-[#03060d] border border-white/10 px-3 py-2 rounded-xl text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-zinc-400 font-semibold block">ที่อยู่รูปภาพประกอบ (URL)</label>
+                    <input
+                      type="text"
+                      value={pointItemImg}
+                      onChange={(e) => setPointItemImg(e.target.value)}
+                      placeholder="กรอก URL ภาพ (ไม่ระบุจะมีภาพมาตรฐานแทน)"
+                      className="w-full bg-[#03060d] border border-white/10 px-3 py-2 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-zinc-400 font-semibold block">ประเภทการส่งมอบรางวัล *</label>
+                    <select
+                      value={pointItemRewardType}
+                      onChange={(e) => {
+                        setPointItemRewardType(e.target.value);
+                        setPointItemRewardVal('');
+                      }}
+                      className="w-full bg-[#03060d] border border-white/10 px-3 py-2.5 rounded-xl text-white focus:outline-none focus:border-sky-500"
+                    >
+                      <option value="credit">เงินวอลเล็ตเติมกระเป๋า (Wallet Cash)</option>
+                      <option value="coupon">เจนเนอเรตคูปองลดเงิน (Coupon)</option>
+                      <option value="code">โค้ดดิจิทัลคีย์ในคลัง (Code Key)</option>
+                    </select>
+                  </div>
+
+                  {/* Contextual values */}
+                  <div className="space-y-1">
+                    {pointItemRewardType === 'credit' && (
+                      <>
+                        <label className="text-zinc-400 font-semibold block">ระบุจำนวนเงินสด (บาท) *</label>
+                        <input
+                          type="number"
+                          required
+                          value={pointItemRewardVal}
+                          onChange={(e) => setPointItemRewardVal(e.target.value)}
+                          placeholder="เช่น 50"
+                          className="w-full bg-[#03060d] border border-white/10 px-3 py-2 rounded-xl text-white focus:outline-none"
+                        />
+                      </>
+                    )}
+                    {pointItemRewardType === 'coupon' && (
+                      <>
+                        <label className="text-zinc-400 font-semibold block">ระบุมูลค่าส่วนลดคูปอง (บาท) *</label>
+                        <input
+                          type="number"
+                          required
+                          value={pointItemRewardVal}
+                          onChange={(e) => setPointItemRewardVal(e.target.value)}
+                          placeholder="เช่น 20"
+                          className="w-full bg-[#03060d] border border-white/10 px-3 py-2 rounded-xl text-white focus:outline-none"
+                        />
+                      </>
+                    )}
+                    {pointItemRewardType === 'code' && (
+                      <>
+                        <label className="text-zinc-400 font-semibold block">ใส่รหัสโค้ดรางวัล (แยกบรรทัดละ 1 รหัส) *</label>
+                        <textarea
+                          required
+                          value={pointItemRewardVal}
+                          onChange={(e) => setPointItemRewardVal(e.target.value)}
+                          placeholder="STEAM-KEY-1&#10;STEAM-KEY-2&#10;STEAM-KEY-3"
+                          className="w-full h-24 bg-[#03060d] border border-white/10 px-3 py-2 rounded-xl text-white placeholder-zinc-600 focus:outline-none focus:border-sky-500 font-mono resize-none"
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  {/* Status toggle */}
+                  <div className="flex items-center gap-2 py-2">
+                    <input
+                      type="checkbox"
+                      id="pointItemActive"
+                      checked={pointItemActive}
+                      onChange={(e) => setPointItemActive(e.target.checked)}
+                      className="w-4 h-4 rounded accent-sky-500 cursor-pointer"
+                    />
+                    <label htmlFor="pointItemActive" className="text-zinc-300 font-semibold select-none cursor-pointer">เปิดวางขายทันที</label>
+                  </div>
+
+                  {/* Submit buttons */}
+                  <div className="flex gap-2">
+                    {selectedPointItemToEdit && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPointItemToEdit(null);
+                          setPointItemName('');
+                          setPointItemDesc('');
+                          setPointItemCost('');
+                          setPointItemImg('');
+                          setPointItemRewardType('credit');
+                          setPointItemRewardVal('');
+                          setPointItemStock('-1');
+                          setPointItemActive(true);
+                          setPointItemError('');
+                        }}
+                        className="flex-1 border border-white/5 hover:bg-white/5 text-zinc-400 hover:text-white py-3 rounded-xl transition-all cursor-pointer text-center font-bold"
+                      >
+                        ยกเลิกแก้ไข
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={createPointItemMutation.isPending || updatePointItemMutation.isPending}
+                      className="flex-2 w-full flex items-center justify-center gap-1.5 bg-sky-500 text-sky-950 font-bold py-3 rounded-xl hover:bg-sky-400 transition-all cursor-pointer disabled:opacity-50 font-black"
+                    >
+                      {(createPointItemMutation.isPending || updatePointItemMutation.isPending) ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          <span>{selectedPointItemToEdit ? 'บันทึกการแก้ไข' : 'วางของรางวัล'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+            </div>
+
+            {/* Right Col: Items List Table or Point Transactions */}
+            <div className="lg:col-span-2 space-y-4">
+              <div className="flex bg-zinc-900 border border-white/5 p-1 rounded-xl w-full sm:w-max font-sans">
+                <button
+                  onClick={() => setPointShopAdminSubTab('items')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    pointShopAdminSubTab === 'items'
+                      ? 'bg-amber-500 text-amber-950 font-bold shadow-md'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  รายการของรางวัล ({adminPointShopData.items?.length || 0})
+                </button>
+                <button
+                  onClick={() => setPointShopAdminSubTab('gacha')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    pointShopAdminSubTab === 'gacha'
+                      ? 'bg-amber-500 text-amber-950 font-bold shadow-md'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  จัดการตู้ Point Gacha ({pointGachaItems?.length || 0})
+                </button>
+                <button
+                  onClick={() => setPointShopAdminSubTab('history')}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    pointShopAdminSubTab === 'history'
+                      ? 'bg-amber-500 text-amber-950 font-bold shadow-md'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  ประวัติธุรกรรมพอยท์ล่าสุด ({adminPointShopData.transactions?.length || 0})
+                </button>
+              </div>
+
+              {pointShopAdminSubTab === 'items' ? (
+                <>
+                  <div className="bg-white/5 border border-white/5 p-4 rounded-2xl">
+                    <span className="text-xs font-bold text-white block">รายการสินค้าแต้มสะสมทั้งหมด</span>
+                    <span className="text-[10px] text-zinc-500">แอดมินสามารถสลับของรางวัล เปิด/ปิดสต็อก หรือคัดโค้ดคีย์แจกได้ที่นี่</span>
+                  </div>
+
+                  {adminPointShopLoading ? (
+                    <div className="text-center py-20 text-xs text-zinc-500 flex flex-col items-center gap-3">
+                      <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
+                      <span>กำลังดึงรายการสินค้าพอยท์ช็อป...</span>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-white/5 rounded-2xl bg-zinc-950/20 backdrop-blur-md">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/10 bg-zinc-950/60 text-zinc-200 font-bold uppercase tracking-wider backdrop-blur-sm">
+                            <th className="p-4">รูปภาพ</th>
+                            <th className="p-4">ของรางวัล</th>
+                            <th className="p-4">ใช้พอยท์</th>
+                            <th className="p-4">ประเภท/ข้อมูล</th>
+                            <th className="p-4">สต็อกคงเหลือ</th>
+                            <th className="p-4">สถานะ</th>
+                            <th className="p-4 text-right">ดำเนินการ</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-zinc-300">
+                          {adminPointShopData.items?.map(item => {
+                            const rData = item.reward_data || {};
+                            return (
+                              <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                                <td className="p-4">
+                                  <img src={item.image_url || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=100&auto=format&fit=crop&q=60'} alt={item.name} className="w-12 h-12 object-cover rounded-lg border border-white/5 bg-zinc-900" />
+                                </td>
+                                <td className="p-4">
+                                  <div>
+                                    <span className="font-semibold text-white block">{item.name}</span>
+                                    <span className="text-[10px] text-zinc-500 leading-normal block max-w-[200px] truncate">{item.description || '-'}</span>
+                                  </div>
+                                </td>
+                                <td className="p-4 font-bold text-amber-400 font-mono">{item.point_cost} แต้ม</td>
+                                <td className="p-4">
+                                  {item.reward_type === 'credit' && (
+                                    <span className="text-[10px] text-emerald-400 font-semibold">Wallet: +{rData.amount} บาท</span>
+                                  )}
+                                  {item.reward_type === 'coupon' && (
+                                    <span className="text-[10px] text-teal-400 font-semibold">คูปองลด: {rData.discount} บาท</span>
+                                  )}
+                                  {item.reward_type === 'code' && (
+                                    <span className="text-[10px] text-sky-400 font-semibold">รหัสโค้ด: {(rData.codes || []).length} ชิ้น</span>
+                                  )}
+                                </td>
+                                <td className="p-4 font-semibold font-mono">
+                                  {item.stock === -1 ? 'ไม่จำกัด' : `${item.stock} ชิ้น`}
+                                </td>
+                                <td className="p-4">
+                                  {item.is_active ? (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">วางขายอยู่</span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-500/10 border border-white/5 text-zinc-500">ปิดตัวอยู่</span>
+                                  )}
+                                </td>
+                                <td className="p-4 text-right whitespace-nowrap space-x-2">
+                                  <button
+                                    onClick={() => handleStartEditPointItem(item)}
+                                    className="inline-flex items-center gap-1 bg-zinc-900 text-sky-400 hover:text-sky-300 border border-white/5 hover:border-sky-500/20 p-2 rounded-lg cursor-pointer transition-colors"
+                                    title="แก้ไขรายการ"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (window.confirm(`แน่ใจหรือไม่ว่าต้องการลบของรางวัล "${item.name}"?`)) {
+                                        deletePointItemMutation.mutate(item.id);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1 bg-zinc-900 text-red-400 hover:text-red-300 border border-white/5 hover:border-red-500/20 p-2 rounded-lg cursor-pointer transition-colors"
+                                    title="ลบรายการ"
+                                  >
+                                    <Trash className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              ) : pointShopAdminSubTab === 'gacha' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in-50 duration-200">
+                  {/* Left Column: Point Gacha Item form */}
+                  <div className="space-y-4">
+                    <div className="glass p-5 rounded-2xl border border-white/5 space-y-4 bg-zinc-950/20">
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Award className="w-4 h-4 text-amber-400" />
+                        <span>เพิ่มของรางวัลสุ่มตู้พอยท์ (Point Gacha Item)</span>
+                      </h3>
+
+                      {gachaError && (
+                        <div className="bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg text-xs text-red-400 flex items-center gap-1.5">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{gachaError}</span>
+                        </div>
+                      )}
+
+                      <form onSubmit={(e) => handleCreateGachaItem(e, pointGachaTier?.id)} className="space-y-3.5">
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-zinc-400 font-semibold block">ชื่อของรางวัล *</label>
+                          <input
+                            type="text"
+                            required
+                            value={gachaName}
+                            onChange={(e) => setGachaName(e.target.value)}
+                            className="w-full bg-[#03060d] border border-white/10 px-4 py-2.5 rounded-xl text-xs text-white placeholder-zinc-500 focus-glow transition-all duration-300"
+                            placeholder="เช่น Steam Wallet 200 บาท หรือ เกลือ"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-zinc-400 font-semibold block">ประเภทของรางวัล *</label>
+                          <select
+                            value={gachaType}
+                            onChange={(e) => setGachaType(e.target.value)}
+                            className="w-full bg-[#03060d] border border-white/10 px-4 py-2.5 rounded-xl text-xs text-white focus-glow transition-all duration-300"
+                          >
+                            <option value="empty">เกลือ (ไม่ได้รางวัล)</option>
+                            <option value="coupon">คูปองส่วนลดในร้านค้า</option>
+                            <option value="code">แจกโค้ดคีย์/รหัสผ่านจริง</option>
+                            <option value="topup">โค้ดเติมเงินเข้าเว็บ (เครดิต)</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-zinc-400 font-semibold block">โอกาสสุ่มได้ (%) *</label>
+                          <input
+                            type="number"
+                            required
+                            min="0.01"
+                            step="0.01"
+                            value={gachaChance}
+                            onChange={(e) => setGachaChance(e.target.value)}
+                            className="w-full bg-[#03060d] border border-white/10 px-4 py-2.5 rounded-xl text-xs text-white placeholder-zinc-500 focus-glow transition-all duration-300"
+                            placeholder="โอกาสออก เช่น 50"
+                          />
+                        </div>
+
+                        {gachaType === 'coupon' && (
+                          <div className="space-y-1">
+                            <label className="text-[11px] text-zinc-400 font-semibold block">มูลค่าส่วนลดคูปอง (บาท) *</label>
+                            <input
+                              type="number"
+                              required
+                              min="1"
+                              value={gachaDiscount}
+                              onChange={(e) => setGachaDiscount(e.target.value)}
+                              className="w-full bg-[#03060d] border border-white/10 px-4 py-2.5 rounded-xl text-xs text-white placeholder-zinc-500 focus-glow transition-all duration-300"
+                              placeholder="มูลค่าคูปอง เช่น 100"
+                            />
+                          </div>
+                        )}
+
+                        {gachaType === 'topup' && (
+                          <div className="space-y-1">
+                            <label className="text-[11px] text-zinc-400 font-semibold block">ยอดเงินเติมเข้าบัญชีลูกค้า (บาท) *</label>
+                            <input
+                              type="number"
+                              required
+                              min="1"
+                              value={gachaTopupAmount}
+                              onChange={(e) => setGachaTopupAmount(e.target.value)}
+                              className="w-full bg-[#03060d] border border-white/10 px-4 py-2.5 rounded-xl text-xs text-white placeholder-zinc-500 focus-glow transition-all duration-300"
+                              placeholder="เช่น 50"
+                            />
+                          </div>
+                        )}
+
+                        {gachaType === 'code' && (
+                          <div className="space-y-1">
+                            <label className="text-[11px] text-zinc-400 font-semibold block">ระบุรหัสสินค้า (1 โค้ดต่อบรรทัด)</label>
+                            <textarea
+                              rows="3"
+                              value={gachaStock}
+                              onChange={(e) => setGachaStock(e.target.value)}
+                              className="w-full bg-[#03060d] border border-white/10 px-4 py-2.5 rounded-xl text-xs text-white placeholder-zinc-500 focus-glow transition-all duration-300"
+                              placeholder="CODE-XXXX-YYYY&#10;CODE-AAAA-BBBB"
+                            />
+                          </div>
+                        )}
+
+                        <button
+                          type="submit"
+                          disabled={createGachaItemMutation.isPending}
+                          className="w-full flex items-center justify-center gap-1.5 bg-amber-500 text-amber-950 font-bold py-2.5 rounded-xl hover:bg-amber-400 transition-all text-xs glow-btn cursor-pointer"
+                        >
+                          {createGachaItemMutation.isPending ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>เพิ่มรางวัลสุ่ม</span>
+                            </>
+                          )}
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Point Gacha items table */}
+                  <div className="lg:col-span-2 space-y-4">
+                    <div className="bg-white/5 border border-white/5 p-4 rounded-2xl">
+                      <span className="text-xs font-bold text-white block">รายการของรางวัลทั้งหมดในตู้ Point Gacha</span>
+                      <span className="text-[10px] text-zinc-500">อัตราความน่าจะเป็นรวมทั้งหมด: {pointGachaItems.reduce((acc, cur) => acc + Number(cur.chance), 0).toFixed(2)}% (ต้องครบ 100%)</span>
+                    </div>
+
+                    {pointGachaLoading ? (
+                      <div className="text-center py-20 text-xs text-zinc-500 flex flex-col items-center gap-3">
+                        <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+                        <span>กำลังโหลดข้อมูลของสุ่มแต้ม...</span>
+                      </div>
+                    ) : pointGachaItems.length === 0 ? (
+                      <div className="text-center py-16 bg-zinc-950/20 border border-white/5 rounded-2xl">
+                        <span className="text-xs text-zinc-500">ตู้นี้ยังไม่มีรายการของรางวัล</span>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto border border-white/5 rounded-2xl bg-zinc-950/20 backdrop-blur-md">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead>
+                            <tr className="border-b border-white/10 bg-zinc-950/60 text-zinc-200 font-bold uppercase tracking-wider backdrop-blur-sm font-sans">
+                              <th className="p-4">ของรางวัล</th>
+                              <th className="p-4">โอกาส (%)</th>
+                              <th className="p-4">ประเภท/มูลค่า</th>
+                              <th className="p-4">สต็อกรหัส</th>
+                              <th className="p-4 text-right">ดำเนินการ</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-white/5 text-zinc-300">
+                            {pointGachaItems.map((item) => (
+                              <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                                <td className="p-4 font-semibold text-white">{item.name}</td>
+                                <td className="p-4 font-bold text-sky-400 font-mono">{item.chance}%</td>
+                                <td className="p-4 uppercase">
+                                  {item.type === 'empty' && <span className="text-zinc-500">เกลือ 🧂</span>}
+                                  {item.type === 'coupon' && <span className="text-teal-400">คูปองลด {item.discount}฿</span>}
+                                  {item.type === 'topup' && <span className="text-emerald-400">เครดิต +{item.topup_amount}฿</span>}
+                                  {item.type === 'code' && <span className="text-indigo-400">รหัสโค้ดรางวัล</span>}
+                                </td>
+                                <td className="p-4 font-mono font-semibold">
+                                  {item.type === 'code' ? `${item.stock || 0} ชิ้น` : '-'}
+                                </td>
+                                <td className="p-4 text-right whitespace-nowrap space-x-2">
+                                  {item.type === 'code' && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedGachaForStockManagement(item);
+                                        setGachaStockModalOpen(true);
+                                      }}
+                                      className="inline-flex items-center gap-1 bg-zinc-900 text-amber-400 hover:text-amber-300 border border-white/5 hover:border-amber-500/20 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
+                                      title="เติมคีย์โค้ดของสุ่ม"
+                                    >
+                                      <Key className="w-3.5 h-3.5" />
+                                      <span className="text-[10px] font-bold">เติมสต็อก</span>
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleStartEditGachaItem(item)}
+                                    className="inline-flex items-center gap-1 bg-zinc-900 text-sky-400 hover:text-sky-300 border border-white/5 hover:border-sky-500/20 p-1.5 rounded-lg cursor-pointer"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (window.confirm(`แน่ใจหรือไม่ว่าต้องการลบของรางวัลสุ่ม "${item.name}"?`)) {
+                                        deleteGachaItemMutation.mutate(item.id);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1 bg-zinc-900 text-red-400 hover:text-red-300 border border-white/5 hover:border-red-500/20 p-1.5 rounded-lg cursor-pointer"
+                                  >
+                                    <Trash className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-white/5 border border-white/5 p-4 rounded-2xl">
+                    <span className="text-xs font-bold text-white block">ประวัติความเคลื่อนไหวแต้มพอยท์ของสมาชิก (100 รายการล่าสุด)</span>
+                    <span className="text-[10px] text-zinc-500">บันทึกประวัติการเคลมเควส ประวัติเช็คอิน รายการสปิน Point Gacha และการแลกพอยท์ช็อปของสมาชิกทุกคน</span>
+                  </div>
+
+                  {adminPointShopLoading ? (
+                    <div className="text-center py-20 text-xs text-zinc-500 flex flex-col items-center gap-3">
+                      <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
+                      <span>กำลังดึงประวัติการแลก...</span>
+                    </div>
+                  ) : !adminPointShopData.transactions || adminPointShopData.transactions.length === 0 ? (
+                    <div className="text-center py-16 bg-zinc-950/20 border border-white/5 rounded-2xl">
+                      <span className="text-xs text-zinc-500">ยังไม่มีประวัติการแลกหรือความเคลื่อนไหวพอยท์ของสมาชิก</span>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-white/5 rounded-2xl bg-zinc-950/20 backdrop-blur-md animate-in fade-in duration-200">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-white/10 bg-zinc-950/60 text-zinc-200 font-bold uppercase tracking-wider backdrop-blur-sm">
+                            <th className="p-4">ผู้ใช้งาน</th>
+                            <th className="p-4">คำอธิบายธุรกรรมพอยท์</th>
+                            <th className="p-4">จำนวนพอยท์</th>
+                            <th className="p-4">วันที่ทำรายการ</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-zinc-300">
+                          {adminPointShopData.transactions.map((tx) => {
+                            const isEarn = tx.amount > 0;
+                            return (
+                              <tr key={tx.id} className="hover:bg-white/5 transition-colors">
+                                <td className="p-4">
+                                  <div>
+                                    <span className="font-semibold text-white block">{tx.user?.username || 'ผู้ใช้ทั่วไป'}</span>
+                                    <span className="text-[10px] text-zinc-500 block">{tx.user?.email || '-'}</span>
+                                  </div>
+                                </td>
+                                <td className="p-4 font-medium text-zinc-300 max-w-sm whitespace-normal leading-relaxed font-sans">{tx.description}</td>
+                                <td className={`p-4 font-bold font-mono ${isEarn ? 'text-amber-400' : 'text-red-400'}`}>
+                                  {isEarn ? '+' : ''}{tx.amount} P
+                                </td>
+                                <td className="p-4 text-zinc-500 font-mono">
+                                  {new Date(tx.created_at || tx.createdAt).toLocaleString('th-TH')}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+          </div>
+        )}
       </main>
 
       {/* MODAL: ADJUST USER WALLET BALANCE & VIP RANK */}
@@ -2748,10 +3605,11 @@ const createGachaTierMutation = useMutation({
               </div>
             )}
 
-            <form onSubmit={handleAdjustBalance} className="space-y-4">
-              <div className="grid grid-cols-2 gap-2 p-3 bg-sky-950/20 border border-sky-500/10 rounded-xl text-xs text-sky-400/90">
-                <div>เงินในกระเป๋า: <span className="font-bold text-white block">{selectedUserForAdjust.balance?.toLocaleString()} THB</span></div>
-                <div>ยอดใช้จ่ายสะสม: <span className="font-bold text-white block">{(selectedUserForAdjust.totalSpent || 0).toLocaleString()} THB</span></div>
+            <form onSubmit={handleAdjustBalance} className="space-y-4 font-sans">
+              <div className="grid grid-cols-3 gap-2 p-3 bg-sky-950/20 border border-sky-500/10 rounded-xl text-[10px] text-sky-400/90 leading-tight">
+                <div>กระเป๋าเงิน: <span className="font-bold text-white block truncate">{selectedUserForAdjust.balance?.toLocaleString()} THB</span></div>
+                <div>ยอดซื้อสะสม: <span className="font-bold text-white block truncate">{(selectedUserForAdjust.totalSpent || 0).toLocaleString()} THB</span></div>
+                <div>แต้มสะสม: <span className="font-bold text-amber-400 block truncate">{(selectedUserForAdjust.points || 0).toLocaleString()} P</span></div>
               </div>
 
               {/* ส่วนที่ 1: ปรับแต่งกระเป๋าเงิน */}
@@ -2781,7 +3639,7 @@ const createGachaTierMutation = useMutation({
               </div>
 
               {/* ส่วนที่ 2: จัดการระดับยศสะสม */}
-              <div className="space-y-3">
+              <div className="border-b border-white/5 pb-3.5 space-y-3">
                 <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider block">2. จัดการยศสมาชิก (VIP Rank)</span>
 
                 <div className="space-y-1">
@@ -2812,6 +3670,21 @@ const createGachaTierMutation = useMutation({
                     onChange={(e) => setAdjustSpent(e.target.value)}
                     className="w-full bg-[#03060d] border border-white/5 px-3 py-2 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500"
                     placeholder="ระบุยอดสะสมโดยละเอียด เช่น 5200"
+                  />
+                </div>
+              </div>
+
+              {/* ส่วนที่ 3: จัดการแต้มสะสม */}
+              <div className="space-y-3 pb-2">
+                <span className="text-[10px] font-bold text-amber-500 uppercase tracking-wider block">3. จัดการแต้มสะสม (Points)</span>
+                <div className="space-y-1">
+                  <label className="text-xs text-zinc-400 font-semibold block">ยอดพอยท์ที่ปรับปรุง (แต้ม)</label>
+                  <input
+                    type="number"
+                    value={adjustPoints}
+                    onChange={(e) => setAdjustPoints(e.target.value)}
+                    className="w-full bg-[#03060d] border border-white/5 px-3 py-2 rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500"
+                    placeholder="ป้อนค่าบวก (เพิ่มแต้ม) หรือ ค่าลบ (ลดแต้ม) เช่น 50 หรือ -30"
                   />
                 </div>
               </div>

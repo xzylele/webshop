@@ -29,6 +29,7 @@ export default function AdminGachaStockModal({ isOpen, onClose, gachaItem }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-gacha'] });
       queryClient.invalidateQueries({ queryKey: ['admin-gacha-tiers'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-point-gacha'] });
       setNewCodesInput('');
       setEditingIdx(null);
       setEditingVal('');

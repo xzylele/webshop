@@ -47,6 +47,8 @@ export const authOptions = {
           role: user.role,
           balance: Number(user.balance),
           totalSpent: Number(user.total_spent) || 0,
+          points: Number(user.points) || 0,
+          lastRewardedRank: user.last_rewarded_rank || 'Member',
         };
       }
     })
@@ -58,6 +60,8 @@ export const authOptions = {
         token.role = user.role;
         token.balance = user.balance;
         token.totalSpent = user.totalSpent || 0;
+        token.points = user.points || 0;
+        token.lastRewardedRank = user.lastRewardedRank || 'Member';
       }
       
       // ดึงยอดเงินและ Rank ล่าสุด
@@ -72,6 +76,8 @@ export const authOptions = {
           token.balance = Number(freshUser.balance);
           token.name = freshUser.username;
           token.totalSpent = Number(freshUser.total_spent) || 0;
+          token.points = Number(freshUser.points) || 0;
+          token.lastRewardedRank = freshUser.last_rewarded_rank || 'Member';
         }
       }
       
@@ -84,6 +90,8 @@ export const authOptions = {
         session.user.balance = token.balance;
         session.user.name = token.name;
         session.user.totalSpent = token.totalSpent || 0;
+        session.user.points = token.points || 0;
+        session.user.lastRewardedRank = token.lastRewardedRank || 'Member';
       }
       return session;
     }

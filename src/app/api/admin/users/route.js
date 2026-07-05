@@ -51,7 +51,7 @@ export async function PUT(request) {
     }
 
     const data = await request.json();
-    const { userId, role, balanceAdjustment, reason, newTotalSpent } = data;
+    const { userId, role, balanceAdjustment, reason, newTotalSpent, pointsAdjustment, newPoints } = data;
 
     if (!userId) {
       return NextResponse.json({ error: 'กรุณาระบุไอดีผู้ใช้' }, { status: 400 });
@@ -106,6 +106,31 @@ export async function PUT(request) {
       updated = true;
     }
 
+    // 4. ปรับเปลี่ยนหรือแก้ไขยอดพอยท์สะสม (Points)
+    if (pointsAdjustment !== undefined && Number(pointsAdjustment) !== 0) {
+      const adjPoints = Number(pointsAdjustment);
+      updates.points = Math.max(0, (Number(user.points) || 0) + adjPoints);
+      updated = true;
+
+      // บันทึกธุรกรรมแต้มสะสม
+      const { error: ptErr } = await supabaseAdmin.from('point_transactions').insert([
+        {
+          user_id: user.id,
+          type: adjPoints > 0 ? 'earn' : 'redeem',
+          amount: adjPoints,
+          description: `[ปรับปรุงแต้มโดยแอดมิน] ${reason || 'ปรับแต่งโดยผู้ดูแลระบบ'}`
+        }
+      ]);
+      
+      if (ptErr) throw ptErr;
+    }
+
+    // 5. ปรับค่าแต้มสะสมตรง ๆ
+    if (newPoints !== undefined) {
+      updates.points = Math.max(0, Number(newPoints));
+      updated = true;
+    }
+
     if (!updated) {
       return NextResponse.json({ error: 'กรุณาระบุข้อมูลที่ต้องการแก้ไข' }, { status: 400 });
     }
@@ -124,7 +149,8 @@ export async function PUT(request) {
       _id: updatedUser.id,
       createdAt: updatedUser.created_at,
       totalSpent: Number(updatedUser.total_spent),
-      balance: Number(updatedUser.balance)
+      balance: Number(updatedUser.balance),
+      points: Number(updatedUser.points)
     };
 
     return NextResponse.json({
