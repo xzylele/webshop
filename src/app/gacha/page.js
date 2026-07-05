@@ -263,8 +263,10 @@ export default function GachaPage() {
     }
   });
 
-  const tiers = gachaData?.tiers || [];
-  const winners = gachaData?.logs || [];
+  const allTiers = gachaData?.tiers || [];
+  const pointTier = allTiers.find(t => t.slug === 'point');
+  const tiers = allTiers.filter(tier => tier.slug !== 'point');
+  const winners = (gachaData?.logs || []).filter(log => log.tierId !== pointTier?.id);
   const selectedTier = tiers.find(tier => tier.id === selectedTierId)
     || tiers.find(tier => tier.isReady && tier.isActive)
     || tiers[0]
