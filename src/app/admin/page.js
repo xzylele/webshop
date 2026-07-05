@@ -316,6 +316,15 @@ export default function AdminPage() {
     setPointItemError('');
   };
 
+  const handleStartEditGachaItem = (item) => {
+    setSelectedGachaToEdit(item);
+    setEditGachaName(item.name);
+    setEditGachaChance(String(item.chance));
+    setEditGachaDiscount(item.couponDiscount ? String(item.couponDiscount) : '');
+    setEditGachaTopupAmount(item.topupAmount ? String(item.topupAmount) : '');
+    setEditGachaError('');
+  };
+
   // Query: Products
   const { data: products = [], isLoading: productsLoading } = useQuery({
     queryKey: ['products'],
