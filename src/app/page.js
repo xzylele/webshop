@@ -520,33 +520,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Discord Contact CTA Banner */}
-        <section className="w-full">
-          <a
-            href="https://rdcw.co.th/discord"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex flex-col sm:flex-row items-center justify-between gap-6 bg-[#5865F2]/10 hover:bg-[#5865F2]/15 border border-[#5865F2]/20 p-6 sm:p-8 rounded-2xl transition-all hover:scale-[0.99] text-left"
-          >
-            <div className="flex items-center gap-4">
-              <div className="bg-[#5865F2] text-white p-3.5 rounded-xl shrink-0">
-                <HelpCircle className="w-7 h-7" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-bold text-white leading-tight">
-                  สอบถามหรือแนะนำระบบเพิ่มเติมได้ที่ Discord ของเรา
-                </h3>
-                <p className="text-xs text-zinc-400">
-                  มีปัญหาการเติมเงิน การซื้อ หรือสตรีมมิ่งหลุด สามารถเข้าแจ้งแอดมินคอมมูนิตี้ช่วยเหลือได้ทันที
-                </p>
-              </div>
-            </div>
-
-            <span className="bg-[#5865F2] text-white hover:bg-[#5865F2]/90 px-5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap">
-              เข้าร่วม Discord
-            </span>
-          </a>
-        </section>
 
       </main>
 

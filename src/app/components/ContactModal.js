@@ -34,23 +34,6 @@ export default function ContactModal({ isOpen, onClose }) {
 
         {/* Channels List */}
         <div className="space-y-3">
-          {/* Discord */}
-          <a
-            href="https://rdcw.co.th/discord"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-4 bg-[#5865F2]/10 hover:bg-[#5865F2]/20 border border-[#5865F2]/20 p-4 rounded-xl transition-all group hover:scale-[0.99]"
-          >
-            <div className="bg-[#5865F2] text-white p-2 rounded-lg">
-              <Send className="w-5 h-5 fill-white" />
-            </div>
-            <div className="text-left">
-              <h3 className="text-sm font-semibold text-white group-hover:text-[#5865F2] transition-colors">
-                Discord Community
-              </h3>
-              <p className="text-xs text-zinc-400">เข้าร่วมพูดคุย แจ้งปัญหา และรับโค้ดฟรี</p>
-            </div>
-          </a>
 
           {/* Messenger */}
           <a
