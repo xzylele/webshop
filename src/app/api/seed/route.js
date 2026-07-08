@@ -233,6 +233,7 @@ export async function GET() {
     await supabaseAdmin.from('gacha_tiers').delete().neq('id', allZeroUUID);
     await supabaseAdmin.from('product_codes').delete().neq('id', allZeroUUID);
     await supabaseAdmin.from('products').delete().neq('id', allZeroUUID);
+    await supabaseAdmin.from('site_settings').delete().neq('key', 'none');
 
     // 2. ใส่ข้อมูลสินค้าตัวอย่าง
     const seededProducts = [];
@@ -317,6 +318,34 @@ export async function GET() {
       ]);
 
     if (logErr) throw logErr;
+
+    // 5. ใส่ข้อมูลตั้งค่าเริ่มต้นระบบเติมเงินใน site_settings
+    const { error: settingsErr } = await supabaseAdmin
+      .from('site_settings')
+      .insert([
+        {
+          key: 'topup_config',
+          value: {
+            promptpay: {
+              enabled: true,
+              promptpayId: '004999038911094',
+              expectedName: 'สมัชญ์'
+            },
+            wallet: {
+              enabled: true
+            },
+            cashcard: {
+              enabled: true,
+              feePercent: 15
+            },
+            giftcode: {
+              enabled: true
+            }
+          }
+        }
+      ]);
+
+    if (settingsErr) throw settingsErr;
 
     return NextResponse.json({
       message: 'รีเซ็ตข้อมูลร้านค้าและเพิ่มสินค้า Mockup พร้อมของรางวัลวงล้อ Gacha และตารางผู้โชคดีตัวอย่างใน Supabase เรียบร้อยแล้ว!',

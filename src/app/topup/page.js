@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Wallet, Smartphone, Landmark, CreditCard, CheckCircle, AlertCircle, Loader2, Copy, Check, Upload } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -74,9 +74,38 @@ export default function TopupPage() {
   const [base64Slip, setBase64Slip] = useState('');
   const [slipPreview, setSlipPreview] = useState('');
   
-  const promptpayId = process.env.NEXT_PUBLIC_PROMPTPAY_ID || '0812345678';
+  const { data: config = {
+    promptpay: { enabled: true, promptpayId: '0812345678', expectedName: '' },
+    wallet: { enabled: true },
+    cashcard: { enabled: true, feePercent: 15 },
+    giftcode: { enabled: true }
+  }, isLoading: configLoading } = useQuery({
+    queryKey: ['topup-config'],
+    queryFn: async () => {
+      const res = await fetch('/api/topup/config');
+      if (!res.ok) throw new Error('Failed to fetch topup config');
+      return res.json();
+    }
+  });
+
+  const promptpayId = config.promptpay?.promptpayId || '0812345678';
   const qrPayload = generatePromptPayPayload(promptpayId, amount);
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+
+  useEffect(() => {
+    if (config) {
+      const firstEnabled = ['promptpay', 'wallet', 'cashcard', 'giftcode'].find(id => {
+        if (id === 'promptpay') return config.promptpay?.enabled;
+        if (id === 'wallet') return config.wallet?.enabled;
+        if (id === 'cashcard') return config.cashcard?.enabled;
+        if (id === 'giftcode') return config.giftcode?.enabled;
+        return false;
+      });
+      if (firstEnabled && (!config[method]?.enabled || !['promptpay', 'wallet', 'cashcard', 'giftcode'].includes(method))) {
+        setMethod(firstEnabled);
+      }
+    }
+  }, [config, method]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -181,9 +210,17 @@ export default function TopupPage() {
   const methodsList = [
     { id: 'promptpay', name: 'PromptPay QR', icon: Landmark, color: 'text-sky-400', desc: 'เติมเงินผ่าน QR Code ไม่มีค่าธรรมเนียม' },
     { id: 'wallet', name: 'TrueMoney Gift Link', icon: Smartphone, color: 'text-orange-400', desc: 'สร้างซองของขวัญ TrueMoney ส่งลิงค์เพื่อเติมเงิน' },
-    { id: 'cashcard', name: 'TrueMoney Cashcard', icon: CreditCard, color: 'text-amber-400', desc: 'บัตรเติมเงินทรูมันนี่ (ค่าธรรมเนียม 15%)' },
+    { id: 'cashcard', name: 'TrueMoney Cashcard', icon: CreditCard, color: 'text-amber-400', desc: `บัตรเติมเงินทรูมันนี่ (ค่าธรรมเนียม ${config.cashcard?.feePercent ?? 15}%)` },
     { id: 'giftcode', name: 'Gacha Code', icon: Wallet, color: 'text-rose-400', desc: 'แลกโค้ดเติมเงินของรางวัลจาก Gacha' },
   ];
+
+  const enabledMethods = methodsList.filter(m => {
+    if (m.id === 'promptpay') return config.promptpay?.enabled;
+    if (m.id === 'wallet') return config.wallet?.enabled;
+    if (m.id === 'cashcard') return config.cashcard?.enabled;
+    if (m.id === 'giftcode') return config.giftcode?.enabled;
+    return true;
+  });
 
   return (
     <div className="relative min-h-screen flex flex-col">
@@ -223,21 +260,37 @@ export default function TopupPage() {
           </div>
         ) : (
           /* Main Topup Layout */
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            
-            {/* Left Col: Methods List */}
-            <div className="space-y-3">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
-                ช่องทางชำระเงิน
-              </span>
+          configLoading ? (
+            <div className="flex justify-center items-center py-20 text-zinc-400 gap-2">
+              <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
+              <span>กำลังโหลดข้อมูลช่องทางเติมเงิน...</span>
+            </div>
+          ) : enabledMethods.length === 0 ? (
+            <div className="glass p-10 rounded-2xl border border-white/5 text-center max-w-md mx-auto space-y-4">
+              <div className="inline-flex bg-amber-500/10 p-4 rounded-full text-amber-400">
+                <AlertCircle className="w-12 h-12 animate-bounce" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-lg font-bold text-white">ระบบเติมเงินปิดปรับปรุงชั่วคราว</h2>
+                <p className="text-xs text-zinc-400">ขณะนี้ไม่มีช่องทางเติมเงินใดเปิดใช้งาน ขออภัยในความไม่สะดวก</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              {methodsList.map((m) => {
-                const Icon = m.icon;
-                const isSelected = method === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => {
+              {/* Left Col: Methods List */}
+              <div className="space-y-3">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1">
+                  ช่องทางชำระเงิน
+                </span>
+                
+                {enabledMethods.map((m) => {
+                  const Icon = m.icon;
+                  const isSelected = method === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => {
                       setMethod(m.id);
                       setTopupSuccess(null);
                       setErrorMsg('');
@@ -473,7 +526,7 @@ export default function TopupPage() {
             </div>
 
           </div>
-        )}
+        ))}
 
       </main>
 

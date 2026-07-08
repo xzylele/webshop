@@ -26,7 +26,7 @@ export default function AdminPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState('products'); // products | transactions | users | coupons | gacha | stats | banners | tickets
+  const [activeTab, setActiveTab] = useState('products'); // products | transactions | users | coupons | gacha | stats | banners | tickets | topup
   const [contactOpen, setContactOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -105,6 +105,48 @@ export default function AdminPage() {
   const [selectedPointItemToEdit, setSelectedPointItemToEdit] = useState(null);
   const [pointItemError, setPointItemError] = useState('');
   const [pointShopAdminSubTab, setPointShopAdminSubTab] = useState('items'); // items | history
+
+  // Topup settings state
+  const [topupForm, setTopupForm] = useState(null);
+
+  // Query: Topup config
+  const { data: topupConfig, isLoading: topupConfigLoading } = useQuery({
+    queryKey: ['admin-topup-config'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/topup-config');
+      if (!res.ok) throw new Error('Failed to load topup config');
+      return res.json();
+    },
+    enabled: status === 'authenticated' && session?.user?.role === 'admin',
+  });
+
+  // Sync config query to local state
+  useEffect(() => {
+    if (topupConfig) {
+      setTopupForm(topupConfig);
+    }
+  }, [topupConfig]);
+
+  // Mutation: Save topup config
+  const updateTopupConfigMutation = useMutation({
+    mutationFn: async (newConfig) => {
+      const res = await fetch('/api/admin/topup-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-topup-config'] });
+      alert('บันทึกการตั้งค่าระบบเติมเงินสำเร็จแล้ว!');
+    },
+    onError: (err) => {
+      alert(err.message);
+    }
+  });
 
   // Redirect if not admin
   useEffect(() => {
@@ -1134,6 +1176,16 @@ const createGachaTierMutation = useMutation({
               }`}
           >
             จัดการ Point Shop ({adminPointShopData.items?.length || 0})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('topup')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap border transition-all cursor-pointer duration-300 ${activeTab === 'topup'
+                ? 'bg-sky-500/10 text-sky-400 border-sky-500/30 shadow-[0_0_15px_rgba(14,165,233,0.15)] font-bold'
+                : 'bg-zinc-950/20 border-white/5 text-zinc-400 hover:text-white hover:border-white/10 hover:bg-zinc-900/40'
+              }`}
+          >
+            ตั้งค่าระบบเติมเงิน
           </button>
         </div>
 
@@ -3589,6 +3641,223 @@ const createGachaTierMutation = useMutation({
 
           </div>
         )}
+
+        {/* TAB 10: MANAGE TOPUP CONFIG */}
+        {activeTab === 'topup' && (
+          <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in-50 duration-200">
+            <div className="bg-white/5 border border-white/5 p-5 rounded-2xl">
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-sky-400" />
+                <span>ตั้งค่าระบบเติมเงิน (Topup Settings)</span>
+              </h3>
+              <p className="text-xs text-zinc-500 mt-1">เปิด/ปิดช่องทาง และปรับแต่งการตั้งค่าการโอนเงินของแต่ละช่องทาง</p>
+            </div>
+
+            {topupConfigLoading || !topupForm ? (
+              <div className="flex justify-center items-center py-20 text-zinc-400 gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
+                <span>กำลังโหลดข้อมูลการตั้งค่า...</span>
+              </div>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  updateTopupConfigMutation.mutate(topupForm);
+                }}
+                className="space-y-6"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  
+                  {/* 1. PromptPay QR Settings */}
+                  <div className="bg-zinc-950/40 border border-white/5 p-6 rounded-3xl backdrop-blur-md space-y-4">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <Landmark className="w-5 h-5 text-sky-400" />
+                        <span>PromptPay QR</span>
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setTopupForm({
+                          ...topupForm,
+                          promptpay: { ...topupForm.promptpay, enabled: !topupForm.promptpay.enabled }
+                        })}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                          topupForm.promptpay.enabled
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : 'bg-red-500/10 text-red-400 border-red-500/20'
+                        }`}
+                      >
+                        {topupForm.promptpay.enabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      <div className="space-y-1">
+                        <label className="text-xs text-zinc-400 font-semibold block">หมายเลขพร้อมเพย์ (PromptPay ID) *</label>
+                        <input
+                          type="text"
+                          required
+                          disabled={!topupForm.promptpay.enabled}
+                          value={topupForm.promptpay.promptpayId || ''}
+                          onChange={(e) => setTopupForm({
+                            ...topupForm,
+                            promptpay: { ...topupForm.promptpay, promptpayId: e.target.value }
+                          })}
+                          className="w-full bg-[#03060d] border border-white/5 px-4 py-2.5 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors disabled:opacity-40"
+                          placeholder="เบอร์มือถือ หรือ เลขบัตรประชาชน หรือ e-Wallet ID"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs text-zinc-400 font-semibold block">ชื่อผู้รับโอนเงินที่คาดหวัง (Expected Receiver Name)</label>
+                        <input
+                          type="text"
+                          disabled={!topupForm.promptpay.enabled}
+                          value={topupForm.promptpay.expectedName || ''}
+                          onChange={(e) => setTopupForm({
+                            ...topupForm,
+                            promptpay: { ...topupForm.promptpay, expectedName: e.target.value }
+                          })}
+                          className="w-full bg-[#03060d] border border-white/5 px-4 py-2.5 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors disabled:opacity-40"
+                          placeholder="เช่น สมัชญ์ (ระบุเพื่อเพิ่มความปลอดภัย หรือว่างไว้เพื่อไม่ตรวจสอบ)"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. TrueMoney Wallet Settings */}
+                  <div className="bg-zinc-950/40 border border-white/5 p-6 rounded-3xl backdrop-blur-md flex flex-col justify-between">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <Smartphone className="w-5 h-5 text-orange-400" />
+                          <span>TrueMoney Wallet Gift</span>
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setTopupForm({
+                            ...topupForm,
+                            wallet: { ...topupForm.wallet, enabled: !topupForm.wallet.enabled }
+                          })}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                            topupForm.wallet.enabled
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-red-500/10 text-red-400 border-red-500/20'
+                          }`}
+                        >
+                          {topupForm.wallet.enabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-zinc-500 leading-normal">
+                        ช่องทางการสร้างซองของขวัญและนำลิงค์ซองของขวัญมากดแลกเงินเครดิตเข้าสู่กระเป๋า
+                      </p>
+                    </div>
+                    <div className="pt-4 text-[10px] text-zinc-600 border-t border-white/5 mt-4">
+                      * ลูกค้าจะได้รับเงินเครดิตทันทีตามจำนวนเงินที่ระบุในซองของขวัญ
+                    </div>
+                  </div>
+
+                  {/* 3. TrueMoney Cashcard Settings */}
+                  <div className="bg-zinc-950/40 border border-white/5 p-6 rounded-3xl backdrop-blur-md space-y-4">
+                    <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                      <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                        <CreditCard className="w-5 h-5 text-amber-400" />
+                        <span>TrueMoney Cashcard</span>
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => setTopupForm({
+                          ...topupForm,
+                          cashcard: { ...topupForm.cashcard, enabled: !topupForm.cashcard.enabled }
+                        })}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                          topupForm.cashcard.enabled
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : 'bg-red-500/10 text-red-400 border-red-500/20'
+                        }`}
+                      >
+                        {topupForm.cashcard.enabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-3.5">
+                      <div className="space-y-1">
+                        <label className="text-xs text-zinc-400 font-semibold block">ค่าธรรมเนียมบัตรเงินสด (%) *</label>
+                        <input
+                          type="number"
+                          required
+                          min="0"
+                          max="100"
+                          disabled={!topupForm.cashcard.enabled}
+                          value={topupForm.cashcard.feePercent ?? 15}
+                          onChange={(e) => setTopupForm({
+                            ...topupForm,
+                            cashcard: { ...topupForm.cashcard, feePercent: Number(e.target.value) }
+                          })}
+                          className="w-full bg-[#03060d] border border-white/5 px-4 py-2.5 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-500 transition-colors disabled:opacity-40"
+                          placeholder="เช่น 15"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. Giftcode Settings */}
+                  <div className="bg-zinc-950/40 border border-white/5 p-6 rounded-3xl backdrop-blur-md flex flex-col justify-between">
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                        <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                          <Wallet className="w-5 h-5 text-rose-400" />
+                          <span>Gacha Code</span>
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setTopupForm({
+                            ...topupForm,
+                            giftcode: { ...topupForm.giftcode, enabled: !topupForm.giftcode.enabled }
+                          })}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-black border transition-all cursor-pointer ${
+                            topupForm.giftcode.enabled
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-red-500/10 text-red-400 border-red-500/20'
+                          }`}
+                        >
+                          {topupForm.giftcode.enabled ? 'เปิดใช้งาน' : 'ปิดใช้งาน'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-zinc-500 leading-normal">
+                        ช่องทางการนำรหัสโค้ดรางวัลที่ได้รับจากการสุ่มวงล้อ Gacha มาเคลมเป็นเงินเครดิตเข้ากระเป๋า
+                      </p>
+                    </div>
+                    <div className="pt-4 text-[10px] text-zinc-600 border-t border-white/5 mt-4">
+                      * รหัสของขวัญรางวัลต้องขึ้นต้นด้วย `TOPUP-` ในตาราง `topup_codes`
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Submit Button */}
+                <button
+                  type="submit"
+                  disabled={updateTopupConfigMutation.isPending}
+                  className="w-full flex items-center justify-center gap-2 bg-sky-500 text-sky-950 font-black py-4 rounded-xl hover:bg-sky-400 transition-all glow-btn disabled:opacity-50 cursor-pointer text-sm"
+                >
+                  {updateTopupConfigMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>กำลังบันทึกข้อมูล...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5" />
+                      <span>บันทึกการตั้งค่าระบบเติมเงินทั้งหมด</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+
       </main>
 
       {/* MODAL: ADJUST USER WALLET BALANCE & VIP RANK */}

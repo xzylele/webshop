@@ -14,7 +14,32 @@ export async function POST(request) {
 
     const { amount, method, refCode, base64 } = await request.json();
 
+    // Fetch topup configuration from database
+    let config = {
+      promptpay: { enabled: true, promptpayId: '004999038911094', expectedName: 'สมัชญ์' },
+      wallet: { enabled: true },
+      cashcard: { enabled: true, feePercent: 15 },
+      giftcode: { enabled: true }
+    };
+
+    try {
+      const { data: dbConfig } = await supabaseAdmin
+        .from('site_settings')
+        .select('value')
+        .eq('key', 'topup_config')
+        .maybeSingle();
+
+      if (dbConfig && dbConfig.value) {
+        config = dbConfig.value;
+      }
+    } catch (err) {
+      console.error('Failed to load topup config, using defaults:', err);
+    }
+
     if (method === 'giftcode') {
+      if (!config.giftcode?.enabled) {
+        return NextResponse.json({ error: 'ช่องทาง Gacha Code ปิดปรับปรุงชั่วคราว' }, { status: 400 });
+      }
       if (!refCode || typeof refCode !== 'string') {
         return NextResponse.json({ error: 'กรุณากรอกรหัสเติมเงิน' }, { status: 400 });
       }
@@ -108,6 +133,9 @@ export async function POST(request) {
     }
 
     if (method === 'PromptPay QR') {
+      if (!config.promptpay?.enabled) {
+        return NextResponse.json({ error: 'ช่องทาง PromptPay QR ปิดปรับปรุงชั่วคราว' }, { status: 400 });
+      }
       if (!base64) {
         return NextResponse.json({ error: 'กรุณาอัปโหลดรูปภาพสลิปโอนเงิน' }, { status: 400 });
       }
@@ -201,7 +229,7 @@ export async function POST(request) {
         }
 
         // Verify receiver name if configured
-        const expectedReceiver = process.env.EXPECTED_RECEIVER_NAME;
+        const expectedReceiver = config.promptpay?.expectedName || process.env.EXPECTED_RECEIVER_NAME;
         if (expectedReceiver && expectedReceiver.trim() !== '') {
           const normalizedExpected = expectedReceiver.trim().toLowerCase();
           const normalizedReceiver = receiverName.trim().toLowerCase();
@@ -260,6 +288,14 @@ export async function POST(request) {
     }
 
     // Default processing for TrueMoney Wallet Gift or TrueMoney Cashcard
+    if (method === 'TrueMoney Wallet Gift' && !config.wallet?.enabled) {
+      return NextResponse.json({ error: 'ช่องทาง TrueMoney Gift Link ปิดปรับปรุงชั่วคราว' }, { status: 400 });
+    }
+
+    if (method === 'TrueMoney Cashcard' && !config.cashcard?.enabled) {
+      return NextResponse.json({ error: 'ช่องทาง TrueMoney Cashcard ปิดปรับปรุงชั่วคราว' }, { status: 400 });
+    }
+
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: 'กรุณาระบุจำนวนเงินที่ถูกต้อง' }, { status: 400 });
     }
