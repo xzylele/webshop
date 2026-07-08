@@ -171,3 +171,5 @@ export default function SigninPage() {
     </div>
   );
 }
+
+export const dynamic = 'force-dynamic';
