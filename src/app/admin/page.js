@@ -124,8 +124,15 @@ export default function AdminPage() {
   useEffect(() => {
     if (topupConfig) {
       setTopupForm(topupConfig);
+    } else if (topupConfig === undefined && !topupConfigLoading) {
+      setTopupForm({
+        promptpay: { enabled: true, promptpayId: '004999038911094', expectedName: 'สมัชญ์' },
+        wallet: { enabled: true },
+        cashcard: { enabled: true, feePercent: 15 },
+        giftcode: { enabled: true }
+      });
     }
-  }, [topupConfig]);
+  }, [topupConfig, topupConfigLoading]);
 
   // Mutation: Save topup config
   const updateTopupConfigMutation = useMutation({

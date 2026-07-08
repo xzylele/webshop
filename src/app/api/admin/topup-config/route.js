@@ -30,7 +30,10 @@ export async function GET() {
       .eq('key', 'topup_config')
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.warn('Failed to query site_settings, using defaultConfig:', error.message);
+      return NextResponse.json(defaultConfig);
+    }
 
     if (!data) {
       return NextResponse.json(defaultConfig);
@@ -39,7 +42,7 @@ export async function GET() {
     return NextResponse.json(data.value);
   } catch (error) {
     console.error('Admin get topup config error:', error);
-    return NextResponse.json({ error: 'เกิดข้อผิดพลาดในการโหลดข้อมูลการตั้งค่า' }, { status: 500 });
+    return NextResponse.json(defaultConfig);
   }
 }
 
