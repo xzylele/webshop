@@ -3,13 +3,66 @@
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useMutation } from '@tanstack/react-query';
-import { Wallet, Smartphone, Landmark, CreditCard, CheckCircle, AlertCircle, Loader2, Copy, Check } from 'lucide-react';
+import { Wallet, Smartphone, Landmark, CreditCard, CheckCircle, AlertCircle, Loader2, Copy, Check, Upload } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import ContactModal from '../components/ContactModal';
 import HistoryModal from '../components/HistoryModal';
 import CanvasBackground from '../components/CanvasBackground';
 import Link from 'next/link';
+
+// CRC16 Calculation for EMVCo
+function crc16(data) {
+  let crc = 0xFFFF;
+  for (let i = 0; i < data.length; i++) {
+    let x = ((crc >> 8) ^ data.charCodeAt(i)) & 0xFF;
+    x ^= x >> 4;
+    crc = ((crc << 8) ^ (x << 12) ^ (x << 5) ^ x) & 0xFFFF;
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+
+// Generate PromptPay Payload (EMVCo Standard)
+function generatePromptPayPayload(target, amount) {
+  let targetType = "";
+  let formattedTarget = String(target).replace(/[-]/g, "").trim();
+
+  if (formattedTarget.length === 15) {
+    targetType = "03";
+  } else if (formattedTarget.length === 13) {
+    targetType = "02";
+  } else if (formattedTarget.length === 10) {
+    targetType = "01";
+    formattedTarget = "0066" + formattedTarget.slice(1);
+  } else {
+    targetType = "01";
+    if (formattedTarget.startsWith("66")) {
+      formattedTarget = "00" + formattedTarget;
+    } else {
+      formattedTarget = "0066" + formattedTarget;
+    }
+  }
+
+  const sub00 = "0016A000000677010111"; // Application ID
+  const sub01 = targetType + String(formattedTarget.length).padStart(2, "0") + formattedTarget;
+  const tag29Value = sub00 + sub01;
+  const tag29 = "29" + String(tag29Value.length).padStart(2, "0") + tag29Value;
+
+  const tag00 = "000201";
+  const tag01 = amount && Number(amount) > 0 ? "010212" : "010211";
+  const tag53 = "5303764";
+  const tag58 = "5802TH";
+
+  let tag54 = "";
+  if (amount && Number(amount) > 0) {
+    const formattedAmount = Number(amount).toFixed(2);
+    tag54 = "54" + String(formattedAmount.length).padStart(2, "0") + formattedAmount;
+  }
+
+  const payloadToCRC = tag00 + tag01 + tag29 + tag53 + tag54 + tag58 + "6304";
+  const crc = crc16(payloadToCRC);
+  return payloadToCRC + crc;
+}
 
 export default function TopupPage() {
   const { data: session, update: updateSession } = useSession();
@@ -18,7 +71,30 @@ export default function TopupPage() {
   const [refCode, setRefCode] = useState('');
   const [topupSuccess, setTopupSuccess] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [base64Slip, setBase64Slip] = useState('');
+  const [slipPreview, setSlipPreview] = useState('');
   
+  const promptpayId = process.env.NEXT_PUBLIC_PROMPTPAY_ID || '0812345678';
+  const qrPayload = generatePromptPayPayload(promptpayId, amount);
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrPayload)}`;
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 4 * 1024 * 1024) {
+      setErrorMsg('ขนาดรูปภาพสลิปต้องไม่เกิน 4MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setBase64Slip(reader.result);
+      setSlipPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Modals status
   const [contactOpen, setContactOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -40,6 +116,8 @@ export default function TopupPage() {
       setAmount('');
       setRefCode('');
       setErrorMsg('');
+      setBase64Slip('');
+      setSlipPreview('');
     },
     onError: (err) => {
       setErrorMsg(err.message);
@@ -80,9 +158,22 @@ export default function TopupPage() {
       return;
     }
 
+    if (method === 'promptpay') {
+      if (!base64Slip) {
+        setErrorMsg('กรุณาอัปโหลดรูปภาพสลิปโอนเงิน');
+        return;
+      }
+      mutation.mutate({
+        amount: amt,
+        method: 'PromptPay QR',
+        base64: base64Slip,
+      });
+      return;
+    }
+
     mutation.mutate({
       amount: amt,
-      method: method === 'promptpay' ? 'PromptPay QR' : method === 'wallet' ? 'TrueMoney Wallet Gift' : 'TrueMoney Cashcard',
+      method: method === 'wallet' ? 'TrueMoney Wallet Gift' : 'TrueMoney Cashcard',
       refCode: refCode || undefined,
     });
   };
@@ -221,7 +312,7 @@ export default function TopupPage() {
 
                   {/* Contextual Input Fields based on Payment Method */}
                   {method === 'promptpay' && (
-                    <div className="bg-zinc-950/50 border border-white/5 p-4 rounded-xl space-y-3.5 text-center">
+                    <div className="bg-zinc-950/50 border border-white/5 p-4 rounded-xl space-y-4 text-center">
                       <div className="flex flex-col items-center gap-1.5">
                         <span className="bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent font-black tracking-widest text-lg">
                           Prompt Pay
@@ -229,20 +320,64 @@ export default function TopupPage() {
                         <span className="text-[10px] text-zinc-500">สแกนคิวอาร์โค้ดด้านล่างเพื่อชำระเงิน</span>
                       </div>
                       
-                      {/* Dynamic Mock QR Code */}
+                      {/* Dynamic Real/Placeholder QR Code */}
                       <div className="bg-white p-3 rounded-xl inline-block border-2 border-sky-950 shadow-inner">
                         <img
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=nakatashop-mock-promptpay-${amount || 100}`}
+                          src={qrCodeUrl}
                           alt="PromptPay QR Code"
-                          className="w-40 h-40"
+                          className="w-44 h-44"
                         />
+                      </div>
+
+                      {/* Image Upload for Bank Slip */}
+                      <div className="space-y-2 text-left">
+                        <label className="text-xs text-zinc-400 font-semibold block">อัปโหลดภาพสลิปโอนเงิน</label>
+                        <div className="flex flex-col items-center justify-center border-2 border-dashed border-white/5 hover:border-sky-500/50 rounded-xl p-4 bg-zinc-950/30 transition-all cursor-pointer relative group">
+                          {slipPreview ? (
+                            <div className="relative w-full flex flex-col items-center gap-2">
+                              <img
+                                src={slipPreview}
+                                alt="Slip Preview"
+                                className="max-h-48 object-contain rounded-lg border border-white/10"
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  setSlipPreview('');
+                                  setBase64Slip('');
+                                }}
+                                className="text-xs text-red-400 hover:text-red-300 font-semibold"
+                              >
+                                ลบรูปภาพสลิป
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="w-full h-full flex flex-col items-center justify-center py-4 cursor-pointer">
+                              <Upload className="w-8 h-8 text-zinc-500 group-hover:text-sky-400 transition-colors mb-2" />
+                              <span className="text-xs font-semibold text-zinc-400 group-hover:text-zinc-300 transition-colors text-center">
+                                คลิกเพื่ออัปโหลดภาพสลิปโอนเงิน (JPG, PNG)
+                              </span>
+                              <span className="text-[10px] text-zinc-600 mt-1">ขนาดสูงสุดไม่เกิน 4MB</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={handleFileChange}
+                              />
+                            </label>
+                          )}
+                        </div>
                       </div>
 
                       <div className="text-left space-y-1 bg-white/5 p-3 rounded-lg border border-white/5 text-xs text-zinc-400 leading-normal">
                         <span className="font-semibold block text-zinc-300">ขั้นตอนการเติมเงิน:</span>
                         <span>1. สแกนคิวอาร์โค้ดชำระเงินตามจำนวนเงินด้านบน</span>
                         <br />
-                        <span>2. สแกนสำเร็จแล้ว ให้กดปุ่ม <b>"ตรวจสอบการทำรายการ"</b> ด้านล่างเพื่อเพิ่มยอดเงิน</span>
+                        <span>2. อัปโหลดภาพสลิปโอนเงินที่ได้ลงในระบบเพื่อใช้ตรวจสอบ</span>
+                        <br />
+                        <span>3. กดปุ่ม <b>"ตรวจสอบและเติมเงิน"</b> ด้านล่างเพื่อเพิ่มยอดเงิน</span>
                       </div>
                     </div>
                   )}
