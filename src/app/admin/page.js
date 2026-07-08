@@ -7,7 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Sliders, Plus, Edit2, Trash2, Users, ShoppingBag, Layers,
   CheckSquare, ArrowLeft, Loader2, Landmark, Smartphone, CreditCard, ShoppingCart,
-  Tag, Power, Trash, DollarSign, Shield, ShieldAlert, Award, UserPlus, AlertCircle, User, Key, Save, X, Send, Ticket, Coins
+  Tag, Power, Trash, DollarSign, Shield, ShieldAlert, Award, UserPlus, AlertCircle, User, Key, Save, X, Send, Ticket, Coins, Wallet
 } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
